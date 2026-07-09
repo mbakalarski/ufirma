@@ -14,6 +14,15 @@ Repozytorium zawiera dwa pakiety (każdy z własną komendą CLI):
 Wszystkie przebiegi (uwierzytelnianie, wysyłka i pobieranie faktur, budowa
 i wysyłka JPK, UPO) są weryfikowane testami e2e na środowiskach testowych MF.
 
+## Po co, skoro jest e-mikrofirma?
+
+Darmowa e-mikrofirma MF nie obsługuje (stan na lipiec 2026) sprzedaży
+zagranicznej w walucie obcej — np. faktury dla kontrahenta z USA wystawionej
+w USD. Ten projekt tak: podstawy przelicza na PLN kursem z faktury lub podanym
+jawnie, podatek bierze z pól `P_14_xW`, a nabywcę bez NIP/VAT-UE (`BrakID`)
+wykazuje w ewidencji jako `BRAK` — i taki JPK przechodzi walidację schematem
+MF oraz bramkę e-Dokumenty.
+
 ## Instalacja
 
 Projekt zarządzany przez [uv](https://docs.astral.sh/uv/), Python 3.14:
