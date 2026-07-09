@@ -1,7 +1,7 @@
 [project]
-name = "ksef"
+name = "ksef-jpk"
 version = "0.1.0"
-description = "Klient KSeF (Krajowy System e-Faktur)"
+description = "KSeF → JPK: pobieranie faktur z KSeF, budowa JPK_V7M i wysyłka do bramki e-Dokumenty"
 readme = "README.md"
 authors = [
     { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }
@@ -11,14 +11,19 @@ dependencies = [
     "cryptography>=49.0.0",
     "httpx>=0.28.1",
     "signxml>=5.1.0",
+    "typer>=0.26.8",
 ]
 
 [project.scripts]
-ksef = "ksef:main"
+ksef = "ksef.cli:app"
+jpk = "jpk.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["ksef", "jpk"]
 
 [dependency-groups]
 dev = [

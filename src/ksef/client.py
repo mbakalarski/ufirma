@@ -95,7 +95,12 @@ class KsefClient:
         if token:
             request_headers["Authorization"] = f"Bearer {token}"
         response = self._http.request(
-            method, path, json=json, content=content, params=params, headers=request_headers
+            method,
+            path,
+            json=json,
+            content=content,
+            params=params,
+            headers=request_headers,
         )
         if response.status_code >= 400:
             raise KsefApiError(response.status_code, response.text)
@@ -134,14 +139,18 @@ class KsefClient:
         response = self._request("POST", "/auth/ksef-token", json=body)
         return AuthenticationInit.from_json(response.json())
 
-    def get_auth_status(self, reference_number: str, authentication_token: str) -> AuthStatus:
+    def get_auth_status(
+        self, reference_number: str, authentication_token: str
+    ) -> AuthStatus:
         response = self._request(
             "GET", f"/auth/{reference_number}", bearer=authentication_token
         )
         return AuthStatus.from_json(response.json())
 
     def redeem_tokens(self, authentication_token: str) -> AuthTokens:
-        response = self._request("POST", "/auth/token/redeem", bearer=authentication_token)
+        response = self._request(
+            "POST", "/auth/token/redeem", bearer=authentication_token
+        )
         tokens = AuthTokens.from_json(response.json())
         self.access_token = tokens.access_token
         self.refresh_token = tokens.refresh_token
@@ -149,7 +158,9 @@ class KsefClient:
 
     def refresh_access_token(self) -> TokenInfo:
         if self.refresh_token is None:
-            raise KsefAuthenticationError("Brak refresh tokena — najpierw się uwierzytelnij")
+            raise KsefAuthenticationError(
+                "Brak refresh tokena — najpierw się uwierzytelnij"
+            )
         response = self._request(
             "POST", "/auth/token/refresh", bearer=self.refresh_token.token
         )
@@ -264,7 +275,9 @@ class KsefClient:
         """Czekaj, aż faktura dostanie numer KSeF (status 200); ≥300 = odrzucenie."""
         deadline = time.monotonic() + poll_timeout
         while True:
-            invoice = self.get_session_invoice(session.reference_number, invoice_reference)
+            invoice = self.get_session_invoice(
+                session.reference_number, invoice_reference
+            )
             if invoice.status_code == 200:
                 return invoice
             if invoice.status_code >= 300:

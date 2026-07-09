@@ -25,7 +25,9 @@ def _rsa_oaep_encrypt(payload: bytes, certificate_der: bytes) -> bytes:
     )
 
 
-def encrypt_ksef_token(ksef_token: str, timestamp_ms: int, certificate_der: bytes) -> str:
+def encrypt_ksef_token(
+    ksef_token: str, timestamp_ms: int, certificate_der: bytes
+) -> str:
     """Zaszyfruj token KSeF do postaci wymaganej przez POST /auth/ksef-token.
 
     Szyfrowany jest ciąg ``{token}|{timestampMs}`` algorytmem RSA-OAEP (SHA-256)

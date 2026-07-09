@@ -114,7 +114,9 @@ class SessionInvoice:
             status_details=status.get("details") or [],
             ksef_number=data.get("ksefNumber"),
             invoice_number=data.get("invoiceNumber"),
-            acquisition_date=datetime.fromisoformat(acquisition) if acquisition else None,
+            acquisition_date=datetime.fromisoformat(acquisition)
+            if acquisition
+            else None,
         )
 
 

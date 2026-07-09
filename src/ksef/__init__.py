@@ -43,7 +43,3 @@ __all__ = [
     "SessionInvoice",
     "TokenInfo",
 ]
-
-
-def main() -> None:
-    print("Hello from ksef!")

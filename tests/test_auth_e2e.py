@@ -26,9 +26,9 @@ def _generate_ksef_token(client: KsefClient) -> str:
     ).json()
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
-        status = client._request(
-            "GET", f"/tokens/{created['referenceNumber']}"
-        ).json()["status"]
+        status = client._request("GET", f"/tokens/{created['referenceNumber']}").json()[
+            "status"
+        ]
         if status == "Active":
             return created["token"]
         assert status == "Pending", f"token w nieoczekiwanym stanie {status}"

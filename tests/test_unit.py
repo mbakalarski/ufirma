@@ -18,12 +18,19 @@ def test_random_nip_is_valid() -> None:
 
 
 def test_build_auth_token_request() -> None:
-    root = build_auth_token_request("20250625-CR-2C1A42B000-159AAE455D-9B", CONTEXT_NIP, "7762811692")
+    root = build_auth_token_request(
+        "20250625-CR-2C1A42B000-159AAE455D-9B", CONTEXT_NIP, "7762811692"
+    )
     ns = {"t": AUTH_NAMESPACE}
     assert root.tag == f"{{{AUTH_NAMESPACE}}}AuthTokenRequest"
-    assert root.findtext("t:Challenge", namespaces=ns) == "20250625-CR-2C1A42B000-159AAE455D-9B"
+    assert (
+        root.findtext("t:Challenge", namespaces=ns)
+        == "20250625-CR-2C1A42B000-159AAE455D-9B"
+    )
     assert root.findtext("t:ContextIdentifier/t:Nip", namespaces=ns) == "7762811692"
-    assert root.findtext("t:SubjectIdentifierType", namespaces=ns) == "certificateSubject"
+    assert (
+        root.findtext("t:SubjectIdentifierType", namespaces=ns) == "certificateSubject"
+    )
     etree.tostring(root)
 
 

@@ -38,9 +38,10 @@ def generate_test_certificate(
 ) -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
     """Wygeneruj samopodpisany certyfikat pieczęci firmowej z NIP-em.
 
-    NIP trafia do pola organizationIdentifier (OID 2.5.4.97) jako ``VATPL-{nip}``,
-    zgodnie z wymaganiami uwierzytelniania typu certificateSubject.
-    Wyłącznie do środowiska testowego KSeF.
+    NIP trafia do pola organizationIdentifier (OID 2.5.4.97) jako ``VATPL-{nip}``
+    (wymóg uwierzytelniania KSeF typu certificateSubject) oraz do pola
+    serialNumber (OID 2.5.4.5) jako ``TINPL-{nip}`` (wymóg bramki e-Dokumenty
+    przy wysyłce JPK). Wyłącznie do środowisk testowych.
     """
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name(
@@ -49,6 +50,7 @@ def generate_test_certificate(
             x509.NameAttribute(NameOID.ORGANIZATION_NAME, organization_name),
             x509.NameAttribute(NameOID.COMMON_NAME, organization_name),
             x509.NameAttribute(NameOID.ORGANIZATION_IDENTIFIER, f"VATPL-{nip}"),
+            x509.NameAttribute(NameOID.SERIAL_NUMBER, f"TINPL-{nip}"),
         ]
     )
     now = datetime.now(UTC)
@@ -82,19 +84,28 @@ def generate_test_certificate(
 
 def build_test_invoice(
     seller_nip: str,
-    buyer_nip: str,
+    buyer_nip: str | None,
     invoice_number: str,
     *,
     net: str = "100.00",
     vat: str = "23.00",
     gross: str = "123.00",
+    currency: str = "PLN",
+    vat_pln: str | None = None,
+    exchange_rate: str | None = None,
+    buyer_country: str = "PL",
 ) -> bytes:
     """Zbuduj minimalną fakturę FA(3) VAT (jedna pozycja, stawka 23%).
 
-    Wyłącznie do środowiska testowego KSeF.
+    ``buyer_nip=None`` daje nabywcę bez identyfikatora podatkowego (BrakID).
+    Dla waluty obcej podaj ``vat_pln`` (P_14_1W, podatek przeliczony na PLN)
+    i ``exchange_rate`` (KursWaluty w wierszu). Wyłącznie do środowiska
+    testowego KSeF.
     """
 
-    def el(parent: etree._Element, name: str, text: str | None = None) -> etree._Element:
+    def el(
+        parent: etree._Element, name: str, text: str | None = None
+    ) -> etree._Element:
         child = etree.SubElement(parent, f"{{{FA3_NAMESPACE}}}{name}")
         if text is not None:
             child.text = text
@@ -121,20 +132,25 @@ def build_test_invoice(
 
     podmiot2 = el(root, "Podmiot2")
     dane2 = el(podmiot2, "DaneIdentyfikacyjne")
-    el(dane2, "NIP", buyer_nip)
+    if buyer_nip is not None:
+        el(dane2, "NIP", buyer_nip)
+    else:
+        el(dane2, "BrakID", "1")
     el(dane2, "Nazwa", "Testowy Nabywca S.A.")
     adres2 = el(podmiot2, "Adres")
-    el(adres2, "KodKraju", "PL")
+    el(adres2, "KodKraju", buyer_country)
     el(adres2, "AdresL1", "ul. Przykładowa 2, 00-002 Kraków")
     el(podmiot2, "JST", "2")
     el(podmiot2, "GV", "2")
 
     fa = el(root, "Fa")
-    el(fa, "KodWaluty", "PLN")
+    el(fa, "KodWaluty", currency)
     el(fa, "P_1", today.date().isoformat())
     el(fa, "P_2", invoice_number)
     el(fa, "P_13_1", net)
     el(fa, "P_14_1", vat)
+    if vat_pln is not None:
+        el(fa, "P_14_1W", vat_pln)
     el(fa, "P_15", gross)
     adnotacje = el(fa, "Adnotacje")
     el(adnotacje, "P_16", "2")
@@ -157,5 +173,7 @@ def build_test_invoice(
     el(wiersz, "P_9A", net)
     el(wiersz, "P_11", net)
     el(wiersz, "P_12", "23")
+    if exchange_rate is not None:
+        el(wiersz, "KursWaluty", exchange_rate)
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")

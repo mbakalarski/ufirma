@@ -9,5 +9,14 @@ wheels/
 # Virtual environments
 .venv
 
-#
+# Cache narzędzi
+.pytest_cache/
+.ruff_cache/
+
+# Eksporty sesji Claude
 .claude-export-*
+
+# Sekrety i dane lokalne (wyniki ksef download / jpk generate)
+.env
+/faktury/
+/jpk/
