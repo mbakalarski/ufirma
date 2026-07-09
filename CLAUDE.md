@@ -1,6 +1,8 @@
 # KSeF → JPK (Python)
 
-Obsługa KSeF (Krajowy System e-Faktur) w Pythonie: klient KSeF API 2.0 (pakiet `ksef`), budowa i wysyłka dokumentów JPK (pakiet `jpk`). Każdy pakiet ma swoją komendę CLI w module `cli` (`ksef = "ksef.cli:app"`, `jpk = "jpk.cli:app"`). Układ `src/` z dwoma pakietami (`[tool.uv.build-backend] module-name = ["ksef", "jpk"]`), zarządzany przez **uv**. Komunikacja z użytkownikiem po polsku. **Nie używać poleceń git** — commitami zarządza użytkownik.
+Obsługa KSeF (Krajowy System e-Faktur) w Pythonie: klient KSeF API 2.0 (pakiet `ksef`), budowa i wysyłka dokumentów JPK (pakiet `jpk`). Każdy pakiet ma swoją komendę CLI w module `cli` (`ksef = "ksef.cli:app"`, `jpk = "jpk.cli:app"`). Układ `src/` z dwoma pakietami (`[tool.uv.build-backend] module-name = ["ksef", "jpk"]`), zarządzany przez **uv**. Komunikacja z użytkownikiem po polsku. **Nie używać poleceń git** — commitami zarządza użytkownik (chyba że wprost poprosi). **Nie zapisywać żadnych plików poza katalogiem projektu** (dotyczy też pamięci Claude w `~/.claude` — notatki kontekstowe trzymać tutaj, w CLAUDE.md; pliki tymczasowe w scratchpadzie sesji).
+
+Kontekst użytkownika: prowadzi JDG (w JPK `Podmiot1` = OsobaFizyczna), VAT rozlicza **miesięcznie** (JPK_V7M; V7K niepotrzebny). Główny przypadek: faktury sprzedaży do kontrahenta z USA w USD (nabywca BrakID) — tego nie obsługuje e-mikrofirma i to była motywacja projektu.
 
 ## Komendy
 
