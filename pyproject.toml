@@ -3,6 +3,8 @@ name = "ufirma"
 version = "0.1.0"
 description = "ufirma: pobieranie faktur z KSeF, budowa JPK_V7M i wysyłka do bramki e-Dokumenty"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }
 ]
