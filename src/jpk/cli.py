@@ -1,9 +1,11 @@
 """Komenda ``jpk`` — budowa i wysyłka dokumentów JPK z linii poleceń.
 
 Dane podatnika można podać opcjami albo zmiennymi środowiskowymi
-(``KSEF_NIP``, ``KSEF_TAXPAYER_NAME`` lub ``KSEF_TAXPAYER_FIRST_NAME``/
-``KSEF_TAXPAYER_LAST_NAME``/``KSEF_TAXPAYER_BIRTH_DATE``,
-``KSEF_TAXPAYER_EMAIL``, ``KSEF_TAX_OFFICE``).
+(``JPK_NIP``, ``JPK_TAXPAYER_NAME`` lub ``JPK_TAXPAYER_FIRST_NAME``/
+``JPK_TAXPAYER_LAST_NAME``/``JPK_TAXPAYER_BIRTH_DATE``,
+``JPK_TAXPAYER_EMAIL``, ``JPK_TAX_OFFICE``; do wysyłki także
+``JPK_CERT``/``JPK_KEY`` albo ``JPK_PESEL``/``JPK_REVENUE``
+oraz ``JPK_BRAMKA_ENV``).
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import typer
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-from jpk.bramka import BramkaClient
+from jpk.bramka import AuthData, BramkaClient
 from jpk.exceptions import JpkError
 from jpk.fa3 import parse_invoice
 from jpk.v7m import Taxpayer, build_jpk_v7m
@@ -49,27 +51,27 @@ def generate(
             "--period", help="Okres rozliczeniowy RRRR-MM (data wystawienia)."
         ),
     ],
-    nip: Annotated[str, typer.Option(envvar="KSEF_NIP", help="NIP podatnika.")],
+    nip: Annotated[str, typer.Option(envvar="JPK_NIP", help="NIP podatnika.")],
     email: Annotated[
-        str, typer.Option(envvar="KSEF_TAXPAYER_EMAIL", help="E-mail podatnika.")
+        str, typer.Option(envvar="JPK_TAXPAYER_EMAIL", help="E-mail podatnika.")
     ],
     tax_office: Annotated[
         str,
         typer.Option(
-            "--tax-office", envvar="KSEF_TAX_OFFICE", help="Kod urzędu skarbowego."
+            "--tax-office", envvar="JPK_TAX_OFFICE", help="Kod urzędu skarbowego."
         ),
     ],
     name: Annotated[
         str | None,
         typer.Option(
-            envvar="KSEF_TAXPAYER_NAME", help="Pełna nazwa podatnika (spółka)."
+            envvar="JPK_TAXPAYER_NAME", help="Pełna nazwa podatnika (spółka)."
         ),
     ] = None,
     first_name: Annotated[
         str | None,
         typer.Option(
             "--first-name",
-            envvar="KSEF_TAXPAYER_FIRST_NAME",
+            envvar="JPK_TAXPAYER_FIRST_NAME",
             help="Imię podatnika (osoba fizyczna / JDG).",
         ),
     ] = None,
@@ -77,7 +79,7 @@ def generate(
         str | None,
         typer.Option(
             "--last-name",
-            envvar="KSEF_TAXPAYER_LAST_NAME",
+            envvar="JPK_TAXPAYER_LAST_NAME",
             help="Nazwisko podatnika (osoba fizyczna / JDG).",
         ),
     ] = None,
@@ -85,7 +87,7 @@ def generate(
         datetime | None,
         typer.Option(
             "--birth-date",
-            envvar="KSEF_TAXPAYER_BIRTH_DATE",
+            envvar="JPK_TAXPAYER_BIRTH_DATE",
             formats=["%Y-%m-%d"],
             help="Data urodzenia RRRR-MM-DD (osoba fizyczna / JDG).",
         ),
@@ -165,17 +167,61 @@ def generate(
 def send(
     file: Annotated[Path, typer.Argument(help="Plik JPK (XML) do wysłania.")],
     cert_file: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--cert",
-            envvar="KSEF_CERT",
+            envvar="JPK_CERT",
             help="Certyfikat PEM do podpisu XAdES (na produkcji kwalifikowany).",
         ),
-    ],
+    ] = None,
     key_file: Annotated[
-        Path,
-        typer.Option("--key", envvar="KSEF_KEY", help="Klucz prywatny PEM do podpisu."),
-    ],
+        Path | None,
+        typer.Option("--key", envvar="JPK_KEY", help="Klucz prywatny PEM do podpisu."),
+    ] = None,
+    revenue: Annotated[
+        str | None,
+        typer.Option(
+            "--revenue",
+            envvar="JPK_REVENUE",
+            help="Dane autoryzujące zamiast podpisu (tylko osoba fizyczna):"
+            " kwota przychodu za rok o dwa lata wcześniejszy (0 gdy brak).",
+        ),
+    ] = None,
+    nip: Annotated[
+        str | None,
+        typer.Option(envvar="JPK_NIP", help="NIP podatnika (dane autoryzujące)."),
+    ] = None,
+    pesel: Annotated[
+        str | None,
+        typer.Option(
+            envvar="JPK_PESEL", help="PESEL podatnika (dane autoryzujące, zamiast NIP)."
+        ),
+    ] = None,
+    first_name: Annotated[
+        str | None,
+        typer.Option(
+            "--first-name",
+            envvar="JPK_TAXPAYER_FIRST_NAME",
+            help="Imię podatnika (dane autoryzujące).",
+        ),
+    ] = None,
+    last_name: Annotated[
+        str | None,
+        typer.Option(
+            "--last-name",
+            envvar="JPK_TAXPAYER_LAST_NAME",
+            help="Nazwisko podatnika (dane autoryzujące).",
+        ),
+    ] = None,
+    birth_date: Annotated[
+        datetime | None,
+        typer.Option(
+            "--birth-date",
+            envvar="JPK_TAXPAYER_BIRTH_DATE",
+            formats=["%Y-%m-%d"],
+            help="Data urodzenia RRRR-MM-DD (dane autoryzujące).",
+        ),
+    ] = None,
     environment: Annotated[
         BramkaEnv,
         typer.Option(
@@ -193,11 +239,41 @@ def send(
         float, typer.Option(help="Maksymalny czas oczekiwania na wynik (sekundy).")
     ] = 600.0,
 ) -> None:
-    """Wyślij plik JPK do bramki e-Dokumenty MF (domyślnie środowisko testowe)."""
+    """Wyślij plik JPK do bramki e-Dokumenty MF (domyślnie środowisko testowe).
+
+    Uwierzytelnienie: podpis XAdES (--cert + --key) albo dane autoryzujące
+    (--revenue + --nip/--pesel + --first-name + --last-name + --birth-date).
+    """
     if not file.is_file():
         raise _fail(f"Nie znaleziono pliku {file}.")
-    certificate = x509.load_pem_x509_certificate(cert_file.read_bytes())
-    private_key = load_pem_private_key(key_file.read_bytes(), password=None)
+
+    certificate = private_key = auth_data = None
+    if cert_file is not None and key_file is not None and revenue is None:
+        certificate = x509.load_pem_x509_certificate(cert_file.read_bytes())
+        private_key = load_pem_private_key(key_file.read_bytes(), password=None)
+    elif revenue is not None and cert_file is None and key_file is None:
+        if not (first_name and last_name and birth_date):
+            raise _fail(
+                "Dane autoryzujące wymagają opcji --first-name, --last-name"
+                " i --birth-date."
+            )
+        try:
+            auth_data = AuthData(
+                first_name=first_name,
+                last_name=last_name,
+                birth_date=birth_date.date(),
+                revenue=revenue,
+                nip=nip or None,
+                pesel=pesel or None,
+            )
+        except JpkError as exc:
+            raise _fail(str(exc)) from exc
+    else:
+        raise _fail(
+            "Podaj dokładnie jedną metodę uwierzytelnienia: --cert z --key"
+            " (podpis XAdES) albo --revenue z danymi osobowymi"
+            " (dane autoryzujące, tylko osoba fizyczna)."
+        )
 
     try:
         with BramkaClient(environment.value) as client:
@@ -206,6 +282,7 @@ def send(
                 file_name=file.name,
                 certificate=certificate,
                 private_key=private_key,
+                auth_data=auth_data,
             )
             typer.echo(f"Wysłano. Numer referencyjny: {reference_number}")
             if not wait:

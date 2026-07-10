@@ -1,13 +1,18 @@
-"""Wysyłka JPK do bramki e-Dokumenty MF (spec. interfejsów usług JPK 5.2.0).
+"""Wysyłka JPK do bramki e-Dokumenty MF (spec. interfejsów usług JPK 5.5.1).
 
 Przebieg: ZIP (DEFLATE) → podział na części ≤60 MB → szyfrowanie AES-256-CBC
-(klucz szyfrowany RSA/ECB/PKCS#1 certyfikatem MF) → podpisany XAdES-BES
+(klucz szyfrowany RSA/ECB/PKCS#1 certyfikatem MF) → uwierzytelniony
 ``InitUpload`` na ``POST /api/Storage/InitUploadSigned`` → ``PUT`` części do
 Azure Blob → ``POST /api/Storage/FinishUpload`` → polling
 ``GET /api/Storage/Status/{ref}`` (2xx = UPO, 4xx = odrzucony).
 
-Na środowisku testowym (``test-e-dokumenty.mf.gov.pl``) podpis samopodpisany
-jest akceptowany; na produkcji wymagany jest podpis kwalifikowany lub zaufany.
+Metadane ``InitUpload`` uwierzytelnia dokładnie jedna z technik:
+
+- podpis XAdES-BES (na produkcji kwalifikowany lub zaufany; na środowisku
+  testowym ``test-e-dokumenty.mf.gov.pl`` akceptowany jest samopodpisany),
+- dane autoryzujące (:class:`AuthData`) — tylko podatnik będący osobą
+  fizyczną; XML ``DaneAutoryzujace`` (schemat SIG-2008_v2-0) szyfrowany tym
+  samym kluczem AES co plik JPK trafia do elementu ``AuthData``.
 """
 
 from __future__ import annotations
@@ -20,6 +25,8 @@ import re
 import time
 import zipfile
 from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from importlib.resources import files
 
 import httpx
@@ -34,6 +41,7 @@ from lxml import etree
 from jpk.exceptions import BramkaApiError, JpkError
 
 INITUPLOAD_NAMESPACE = "http://e-dokumenty.mf.gov.pl"
+SIG_NAMESPACE = "http://e-deklaracje.mf.gov.pl/Repozytorium/Definicje/Podpis/"
 
 BRAMKA_TEST = "https://test-e-dokumenty.mf.gov.pl"
 BRAMKA_PROD = "https://e-dokumenty.mf.gov.pl"
@@ -42,6 +50,33 @@ _ENVIRONMENTS = {"test": BRAMKA_TEST, "prod": BRAMKA_PROD}
 _API_VERSION = "01.02.01.20160617"
 _PART_SIZE = 60 * 1024 * 1024
 _FILE_NAME_PATTERN = re.compile(r"[a-zA-Z0-9_.\-]{5,55}")
+# Bramka wymaga deklaracji dokładnie w tej postaci (lxml domyślnie daje apostrofy).
+_XML_DECLARATION = b'<?xml version="1.0" encoding="utf-8"?>'
+
+
+@dataclass(frozen=True)
+class AuthData:
+    """Dane autoryzujące do uwierzytelnienia JPK (tylko osoba fizyczna).
+
+    ``revenue`` to kwota przychodu wykazana w zeznaniu lub rocznym obliczeniu
+    podatku za rok podatkowy o dwa lata wcześniejszy niż rok wysyłki
+    (``0`` gdy nie było przychodu). Wymagany dokładnie jeden identyfikator:
+    ``nip`` albo ``pesel``.
+    """
+
+    first_name: str
+    last_name: str
+    birth_date: date
+    revenue: Decimal | str
+    nip: str | None = None
+    pesel: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.nip is None) == (self.pesel is None):
+            raise JpkError(
+                "Dane autoryzujące wymagają dokładnie jednego identyfikatora:"
+                " NIP albo PESEL"
+            )
 
 
 @dataclass(frozen=True)
@@ -106,8 +141,33 @@ def _sign_xades(
         serialization.NoEncryption(),
     )
     signed = XAdESSigner().sign(element, key=key_pem, cert=cert_pem)
-    # Bramka wymaga deklaracji dokładnie w postaci <?xml version="1.0" encoding="utf-8"?>.
-    return b'<?xml version="1.0" encoding="utf-8"?>' + etree.tostring(signed)
+    return _XML_DECLARATION + etree.tostring(signed)
+
+
+def build_auth_data(auth_data: AuthData) -> bytes:
+    """Zbuduj XML ``DaneAutoryzujace`` zgodny ze schematem SIG-2008_v2-0."""
+    try:
+        revenue = Decimal(str(auth_data.revenue)).quantize(Decimal("0.01"))
+    except InvalidOperation as exc:
+        raise JpkError(
+            f"Nieprawidłowa kwota przychodu: {auth_data.revenue!r}"
+        ) from exc
+    if revenue < 0:
+        raise JpkError("Kwota przychodu nie może być ujemna")
+
+    ns = f"{{{SIG_NAMESPACE}}}"
+    root = etree.Element(f"{ns}DaneAutoryzujace", nsmap={None: SIG_NAMESPACE})
+    if auth_data.nip is not None:
+        etree.SubElement(root, f"{ns}NIP").text = auth_data.nip
+    else:
+        etree.SubElement(root, f"{ns}PESEL").text = auth_data.pesel
+    etree.SubElement(root, f"{ns}ImiePierwsze").text = auth_data.first_name
+    etree.SubElement(root, f"{ns}Nazwisko").text = auth_data.last_name
+    etree.SubElement(root, f"{ns}DataUrodzenia").text = (
+        auth_data.birth_date.isoformat()
+    )
+    etree.SubElement(root, f"{ns}Kwota").text = str(revenue)
+    return _XML_DECLARATION + etree.tostring(root)
 
 
 def build_init_upload(
@@ -120,6 +180,7 @@ def build_init_upload(
     system_code: str,
     schema_version: str,
     form_code: str,
+    encrypted_auth_data: bytes | None = None,
 ) -> etree._Element:
     """Zbuduj (niepodpisany) dokument InitUpload zgodny ze schematem bramki."""
     ns = f"{{{INITUPLOAD_NAMESPACE}}}"
@@ -171,6 +232,10 @@ def build_init_upload(
         )
         part_hash.text = part.md5_b64
 
+    if encrypted_auth_data is not None:
+        auth_el = etree.SubElement(root, f"{ns}AuthData")
+        auth_el.text = base64.b64encode(encrypted_auth_data).decode()
+
     return root
 
 
@@ -198,17 +263,27 @@ class BramkaClient:
         jpk_xml: bytes,
         *,
         file_name: str,
-        certificate: x509.Certificate,
-        private_key: PrivateKeyTypes,
+        certificate: x509.Certificate | None = None,
+        private_key: PrivateKeyTypes | None = None,
+        auth_data: AuthData | None = None,
         system_code: str = "JPK_V7M (3)",
         schema_version: str = "1-0E",
         form_code: str = "JPK_VAT",
     ) -> str:
         """Wyślij dokument JPK; zwróć numer referencyjny sesji.
 
-        ``certificate``/``private_key`` służą do podpisu XAdES metadanych
-        (na produkcji: podpis kwalifikowany).
+        Metadane uwierzytelnia dokładnie jedna z technik:
+        ``certificate`` + ``private_key`` — podpis XAdES (na produkcji
+        kwalifikowany lub zaufany) — albo ``auth_data`` — dane autoryzujące
+        (tylko podatnik będący osobą fizyczną).
         """
+        if (certificate is None) != (private_key is None):
+            raise JpkError("Podpis XAdES wymaga certyfikatu razem z kluczem")
+        if (certificate is None) == (auth_data is None):
+            raise JpkError(
+                "Wymagana dokładnie jedna metoda uwierzytelnienia:"
+                " certyfikat z kluczem (XAdES) albo dane autoryzujące"
+            )
         if not _FILE_NAME_PATTERN.fullmatch(file_name):
             raise JpkError(
                 f"Nazwa pliku {file_name!r} niezgodna z wymogiem bramki"
@@ -242,12 +317,20 @@ class BramkaClient:
             system_code=system_code,
             schema_version=schema_version,
             form_code=form_code,
+            encrypted_auth_data=(
+                _encrypt_aes_cbc(build_auth_data(auth_data), key, iv)
+                if auth_data is not None
+                else None
+            ),
         )
-        signed = _sign_xades(init_upload, certificate, private_key)
+        if auth_data is not None:
+            body = _XML_DECLARATION + etree.tostring(init_upload)
+        else:
+            body = _sign_xades(init_upload, certificate, private_key)
 
         response = self._http.post(
             f"{self._base_url}/api/Storage/InitUploadSigned",
-            content=signed,
+            content=body,
             headers={"Content-Type": "application/xml"},
         )
         _raise_for_error(response, "InitUploadSigned")

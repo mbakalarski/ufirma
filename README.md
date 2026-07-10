@@ -47,6 +47,11 @@ jpk generate --period 2026-01 --nip 1111111111 \
 # 3. Wyślij do bramki e-Dokumenty i odbierz UPO
 #    (plik UPO: jpk/JPK_V7M_2026-01.upo.xml)
 jpk send jpk/JPK_V7M_2026-01.xml --cert cert.pem --key key.pem --env prod
+
+# 3'. Osoba fizyczna (JDG) bez podpisu kwalifikowanego — dane autoryzujące:
+#     kwota przychodu za rok podatkowy o dwa lata wcześniejszy (0 gdy brak)
+jpk send jpk/JPK_V7M_2026-01.xml --revenue 123456.78 --nip 1111111111 \
+    --first-name Jan --last-name Kowalski --birth-date 1980-05-01 --env prod
 ```
 
 Do tego `jpk send --no-wait` + `jpk status <numer-referencyjny>` (sprawdzenie
@@ -54,15 +59,23 @@ wyniku później, `--upo plik.xml` zapisuje UPO) oraz opcje `--input-dir`/
 `--output-dir`, gdy katalogi `faktury/` i `jpk/` mają być inne.
 
 Uwierzytelnianie w `ksef download`: token KSeF (`--token`) **albo** certyfikat
-z kluczem (`--cert` + `--key`, pliki PEM). Podpis w `jpk send`: zawsze
-`--cert` + `--key` — na produkcji kwalifikowany lub zaufany, na środowisku
-testowym może być samopodpisany.
+z kluczem (`--cert` + `--key`, pliki PEM). Uwierzytelnienie w `jpk send` —
+jedna z dwóch metod: `--cert` + `--key` (podpis XAdES; na produkcji
+kwalifikowany lub zaufany, na środowisku testowym może być samopodpisany)
+**albo** dane autoryzujące, dostępne tylko dla podatnika będącego osobą
+fizyczną: `--revenue` (kwota przychodu z zeznania za rok podatkowy o dwa lata
+wcześniejszy) razem z `--nip`/`--pesel`, `--first-name`, `--last-name`
+i `--birth-date` — bez żadnego certyfikatu.
 
-Zamiast opcji można ustawić zmienne środowiskowe: `KSEF_NIP`, `KSEF_TOKEN`,
-`KSEF_CERT`, `KSEF_KEY`, `KSEF_ENV`, `KSEF_TAXPAYER_EMAIL`, `KSEF_TAX_OFFICE`,
-`KSEF_TAXPAYER_NAME` (spółka) lub `KSEF_TAXPAYER_FIRST_NAME` /
-`KSEF_TAXPAYER_LAST_NAME` / `KSEF_TAXPAYER_BIRTH_DATE` (JDG) oraz
-`JPK_BRAMKA_ENV`. Pełna lista opcji: `ksef download --help`, `jpk --help`.
+Zamiast opcji można ustawić zmienne środowiskowe — dla `ksef download`:
+`KSEF_NIP`, `KSEF_TOKEN`, `KSEF_CERT`, `KSEF_KEY`, `KSEF_ENV`; dla komend
+`jpk`: `JPK_NIP`, `JPK_TAXPAYER_EMAIL`, `JPK_TAX_OFFICE`, `JPK_TAXPAYER_NAME`
+(spółka) lub `JPK_TAXPAYER_FIRST_NAME` / `JPK_TAXPAYER_LAST_NAME` /
+`JPK_TAXPAYER_BIRTH_DATE` (JDG), `JPK_CERT` / `JPK_KEY` albo `JPK_PESEL` /
+`JPK_REVENUE`, oraz `JPK_BRAMKA_ENV`. Kompletny przykład dla JDG:
+[`.env.example`](.env.example) (skopiuj do `.env` i załaduj np.
+`set -a; source .env; set +a`). Pełna lista opcji: `ksef download --help`,
+`jpk --help`.
 
 ## API Pythona
 
@@ -140,6 +153,27 @@ else:
     print(status.code, status.description)
 ```
 
+Osoba fizyczna może zamiast podpisu uwierzytelnić wysyłkę danymi
+autoryzującymi (odpowiednik „podpisu kwotą przychodu" z e-Deklaracji):
+
+```python
+from datetime import date
+
+from jpk import AuthData
+
+reference = bramka.send_jpk(
+    jpk_xml,
+    file_name="JPK_V7M_2026-01.xml",
+    auth_data=AuthData(
+        nip="1111111111",                       # albo pesel="..."
+        first_name="Jan",
+        last_name="Kowalski",
+        birth_date=date(1980, 5, 1),
+        revenue="123456.78",  # przychód za rok o dwa lata wcześniejszy
+    ),
+)
+```
+
 ### Zabawa na środowisku testowym KSeF
 
 Środowisko TEST wymaga losowych NIP-ów i akceptuje certyfikaty samopodpisane —
@@ -171,7 +205,7 @@ atrybutów wymaganych przez KSeF i bramkę).
 | System | Test | Produkcja |
 |---|---|---|
 | KSeF API 2.0 | `api-test.ksef.mf.gov.pl` (losowe NIP-y, certyfikaty samopodpisane) | `api.ksef.mf.gov.pl` (jest też DEMO) |
-| Bramka JPK (e-Dokumenty) | `test-e-dokumenty.mf.gov.pl` (podpis samopodpisany OK) | `e-dokumenty.mf.gov.pl` (podpis kwalifikowany lub zaufany) |
+| Bramka JPK (e-Dokumenty) | `test-e-dokumenty.mf.gov.pl` (podpis samopodpisany OK) | `e-dokumenty.mf.gov.pl` (podpis kwalifikowany/zaufany albo dane autoryzujące) |
 
 ## Zakres (na dziś)
 
@@ -179,6 +213,8 @@ atrybutów wymaganych przez KSeF i bramkę).
   (rozliczenie miesięczne); rodzaje faktur VAT i KOR.
 - Obsługiwane: stawki 23/8/5/0%, zwolnione, NP (w tym art. 100), WDT, eksport,
   waluty obce, nabywcy bez identyfikatora (`BrakID`), podatnik JDG i spółka.
+- Uwierzytelnienie wysyłki: podpis XAdES (kwalifikowany/zaufany) albo — dla
+  osób fizycznych — dane autoryzujące (bez certyfikatu).
 - Generowany JPK jest walidowany offline oficjalnym schematem MF
   (`schemas/jpk_v7m/`), a numery KSeF faktur trafiają do wierszy ewidencji
   (wymóg JPK_V7M(3), obowiązuje od 1 lutego 2026).

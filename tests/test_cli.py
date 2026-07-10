@@ -128,7 +128,7 @@ def test_generate_jpk_requires_taxpayer_identity(tmp_path: Path) -> None:
             "--input-dir",
             str(invoices_dir),
         ],
-        env={"KSEF_TAXPAYER_NAME": ""},
+        env={"JPK_TAXPAYER_NAME": ""},
     )
     assert result.exit_code == 1
     assert "osoby fizycznej" in result.output
@@ -178,6 +178,38 @@ def test_generate_jpk_requires_invoices(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "download" in result.output
+
+
+_NO_SEND_ENV = {
+    "JPK_CERT": "",
+    "JPK_KEY": "",
+    "JPK_REVENUE": "",
+    "JPK_NIP": "",
+    "JPK_PESEL": "",
+    "JPK_TAXPAYER_FIRST_NAME": "",
+    "JPK_TAXPAYER_LAST_NAME": "",
+    "JPK_TAXPAYER_BIRTH_DATE": "",
+}
+
+
+def test_send_requires_exactly_one_auth_method(tmp_path: Path) -> None:
+    jpk_file = tmp_path / "JPK_V7M_2026-01.xml"
+    jpk_file.write_bytes(b"<JPK/>")
+    result = runner.invoke(jpk_app, ["send", str(jpk_file)], env=_NO_SEND_ENV)
+    assert result.exit_code == 1
+    assert "jedną metodę uwierzytelnienia" in result.output
+
+
+def test_send_auth_data_requires_personal_data(tmp_path: Path) -> None:
+    jpk_file = tmp_path / "JPK_V7M_2026-01.xml"
+    jpk_file.write_bytes(b"<JPK/>")
+    result = runner.invoke(
+        jpk_app,
+        ["send", str(jpk_file), "--revenue", "0", "--nip", random_nip()],
+        env=_NO_SEND_ENV,
+    )
+    assert result.exit_code == 1
+    assert "--birth-date" in result.output
 
 
 def test_download_requires_credentials(tmp_path: Path) -> None:
