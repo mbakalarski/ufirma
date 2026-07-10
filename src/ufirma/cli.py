@@ -1,17 +1,22 @@
-"""Komenda ``jpk`` — budowa i wysyłka dokumentów JPK z linii poleceń.
+"""Komenda ``ufirma`` — pełny obieg rozliczenia VAT z linii poleceń.
 
-Dane podatnika można podać opcjami albo zmiennymi środowiskowymi
-(``JPK_NIP``, ``JPK_TAXPAYER_NAME`` lub ``JPK_TAXPAYER_FIRST_NAME``/
-``JPK_TAXPAYER_LAST_NAME``/``JPK_TAXPAYER_BIRTH_DATE``,
-``JPK_TAXPAYER_EMAIL``, ``JPK_TAX_OFFICE``; do wysyłki także
-``JPK_CERT``/``JPK_KEY`` albo ``JPK_PESEL``/``JPK_REVENUE``
-oraz ``JPK_BRAMKA_ENV``).
+Entry point: ``ufirma = "ufirma.cli:app"``. Dwie grupy podkomend:
+``ufirma ksef download`` (pobranie faktur z KSeF) oraz ``ufirma jpk
+generate``/``send``/``status`` (budowa JPK_V7M, bramka e-Dokumenty, UPO).
+
+Konfiguracja przez opcje albo zmienne środowiskowe — dla ``download``:
+``KSEF_NIP``, ``KSEF_TOKEN``, ``KSEF_CERT``/``KSEF_KEY``, ``KSEF_ENV``;
+dla ``generate``/``send``/``status``: ``JPK_NIP``, ``JPK_TAXPAYER_NAME`` lub
+``JPK_TAXPAYER_FIRST_NAME``/``JPK_TAXPAYER_LAST_NAME``/
+``JPK_TAXPAYER_BIRTH_DATE``, ``JPK_TAXPAYER_EMAIL``, ``JPK_TAX_OFFICE``,
+``JPK_CERT``/``JPK_KEY`` albo ``JPK_PESEL``/``JPK_REVENUE`` oraz
+``JPK_BRAMKA_ENV``. Przykład konfiguracji dla JDG: ``.env.example``.
 """
 
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -24,6 +29,41 @@ from jpk.bramka import AuthData, BramkaClient
 from jpk.exceptions import JpkError
 from jpk.fa3 import parse_invoice
 from jpk.v7m import Taxpayer, build_jpk_v7m
+from ksef import Environment, KsefClient, KsefError
+
+app = typer.Typer(
+    help="ufirma: KSeF → JPK — pobieranie faktur, budowa JPK_V7M"
+    " i wysyłka do bramki e-Dokumenty.",
+    no_args_is_help=True,
+    pretty_exceptions_show_locals=False,
+)
+ksef_app = typer.Typer(help="Praca z KSeF: pobieranie faktur.", no_args_is_help=True)
+jpk_app = typer.Typer(
+    help="Budowa i wysyłka JPK_V7M do bramki e-Dokumenty.", no_args_is_help=True
+)
+app.add_typer(ksef_app, name="ksef")
+app.add_typer(jpk_app, name="jpk")
+
+
+@ksef_app.callback()
+def _ksef() -> None:
+    """Callback utrwala strukturę podkomend (``ufirma ksef download ...``) —
+
+    bez niego Typer zwinąłby jedyną komendę grupy do jej korzenia.
+    """
+
+
+class EnvName(StrEnum):
+    test = "test"
+    demo = "demo"
+    prod = "prod"
+
+
+class SubjectType(StrEnum):
+    Subject1 = "Subject1"
+    Subject2 = "Subject2"
+    Subject3 = "Subject3"
+    SubjectAuthorized = "SubjectAuthorized"
 
 
 class BramkaEnv(StrEnum):
@@ -31,19 +71,101 @@ class BramkaEnv(StrEnum):
     prod = "prod"
 
 
-app = typer.Typer(
-    help="Budowa i wysyłka JPK_V7M.",
-    no_args_is_help=True,
-    pretty_exceptions_show_locals=False,
-)
-
-
 def _fail(message: str) -> typer.Exit:
     typer.secho(message, fg=typer.colors.RED, err=True)
     return typer.Exit(1)
 
 
-@app.command()
+def _authenticate(
+    client: KsefClient,
+    nip: str,
+    token: str | None,
+    cert_file: Path | None,
+    key_file: Path | None,
+) -> None:
+    if token:
+        client.authenticate_with_ksef_token(nip, token)
+        return
+    certificate = x509.load_pem_x509_certificate(cert_file.read_bytes())  # type: ignore[union-attr]
+    private_key = load_pem_private_key(key_file.read_bytes(), password=None)  # type: ignore[union-attr]
+    client.authenticate_with_certificate(nip, certificate, private_key)
+
+
+@ksef_app.command()
+def download(
+    from_date: Annotated[
+        datetime,
+        typer.Option("--from", help="Początek zakresu dat wystawienia (RRRR-MM-DD)."),
+    ],
+    to_date: Annotated[
+        datetime,
+        typer.Option(
+            "--to", help="Koniec zakresu dat wystawienia (RRRR-MM-DD, włącznie)."
+        ),
+    ],
+    nip: Annotated[
+        str, typer.Option(envvar="KSEF_NIP", help="NIP kontekstu (podatnika).")
+    ],
+    token: Annotated[
+        str | None,
+        typer.Option(envvar="KSEF_TOKEN", help="Token KSeF (uwierzytelnienie)."),
+    ] = None,
+    cert_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--cert", envvar="KSEF_CERT", help="Certyfikat PEM (zamiast tokena)."
+        ),
+    ] = None,
+    key_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--key", envvar="KSEF_KEY", help="Klucz prywatny PEM (zamiast tokena)."
+        ),
+    ] = None,
+    environment: Annotated[
+        EnvName, typer.Option("--env", envvar="KSEF_ENV", help="Środowisko KSeF.")
+    ] = EnvName.test,
+    subject_type: Annotated[
+        SubjectType,
+        typer.Option(help="Rola w fakturze (Subject1 = sprzedaż podatnika)."),
+    ] = SubjectType.Subject1,
+    output_dir: Annotated[
+        Path,
+        typer.Option(
+            "--output-dir", "-o", help="Katalog na pobrane XML (nazwy = numery KSeF)."
+        ),
+    ] = Path("faktury"),
+) -> None:
+    """Pobierz faktury z KSeF (XML) za zakres dat wystawienia."""
+    if token and (cert_file or key_file):
+        raise _fail(
+            "Podaj albo token KSeF, albo parę --cert/--key — nie jedno i drugie."
+        )
+    if not token and not (cert_file and key_file):
+        raise _fail(
+            "Brak poświadczeń: podaj token KSeF (--token/KSEF_TOKEN) albo --cert i --key."
+        )
+    date_from = from_date.replace(tzinfo=UTC)
+    date_to = to_date.replace(hour=23, minute=59, second=59, tzinfo=UTC)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+    try:
+        with KsefClient(Environment[environment.value.upper()]) as client:
+            _authenticate(client, nip, token, cert_file, key_file)
+            for metadata in client.iter_invoice_metadata(
+                subject_type.value, date_from, date_to
+            ):
+                xml = client.get_invoice(metadata.ksef_number)
+                (output_dir / f"{metadata.ksef_number}.xml").write_bytes(xml)
+                typer.echo(f"{metadata.ksef_number}  {metadata.invoice_number}")
+                count += 1
+    except KsefError as exc:
+        raise _fail(f"Błąd KSeF: {exc}") from exc
+    typer.echo(f"Pobrano faktur: {count} → {output_dir}")
+
+
+@jpk_app.command()
 def generate(
     period: Annotated[
         str,
@@ -128,7 +250,7 @@ def generate(
 
     files = sorted(input_dir.glob("*.xml"))
     if not files:
-        raise _fail(f"Brak plików *.xml w {input_dir} — najpierw `ksef download`.")
+        raise _fail(f"Brak plików *.xml w {input_dir} — najpierw `ufirma ksef download`.")
 
     invoices = []
     skipped = 0
@@ -163,7 +285,7 @@ def generate(
     )
 
 
-@app.command()
+@jpk_app.command()
 def send(
     file: Annotated[Path, typer.Argument(help="Plik JPK (XML) do wysłania.")],
     cert_file: Annotated[
@@ -287,7 +409,7 @@ def send(
             typer.echo(f"Wysłano. Numer referencyjny: {reference_number}")
             if not wait:
                 typer.echo(
-                    f"Status sprawdzisz później: jpk status {reference_number} --env {environment.value}"
+                    f"Status sprawdzisz później: ufirma jpk status {reference_number} --env {environment.value}"
                 )
                 return
             status = client.wait_for_processing(
@@ -304,13 +426,13 @@ def send(
     elif status.in_progress:
         typer.echo(
             "Przetwarzanie trwa — sprawdź później:"
-            f" jpk status {reference_number} --env {environment.value}"
+            f" ufirma jpk status {reference_number} --env {environment.value}"
         )
     if status.is_rejected:
         raise _fail("Dokument odrzucony przez bramkę.")
 
 
-@app.command()
+@jpk_app.command()
 def status(
     reference_number: Annotated[
         str, typer.Argument(help="Numer referencyjny sesji wysyłki.")

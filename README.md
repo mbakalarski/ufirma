@@ -1,15 +1,18 @@
-# KSeF → JPK
+# ufirma
 
 Rozliczenie VAT z faktur w KSeF, od początku do końca w Pythonie:
 **pobranie faktur sprzedaży z KSeF → zbudowanie JPK_V7M(3) → wysyłka do
-bramki e-Dokumenty MF → odbiór UPO.**
+bramki e-Dokumenty MF → odbiór UPO.** Całość obsługuje jedna komenda
+`ufirma` z grupami podkomend: `ufirma ksef download` oraz
+`ufirma jpk generate`/`send`/`status`.
 
-Repozytorium zawiera dwa pakiety (każdy z własną komendą CLI):
+Repozytorium zawiera dwa pakiety biblioteczne i pakiet CLI:
 
 - **`ksef`** — klient KSeF API 2.0: uwierzytelnianie (XAdES lub token KSeF),
-  wysyłka faktur FA(3), pobieranie metadanych i XML faktur → komenda `ksef`,
+  wysyłka faktur FA(3), pobieranie metadanych i XML faktur,
 - **`jpk`** — budowa JPK_V7M(3) z faktur FA(3) i wysyłka do bramki
-  e-Dokumenty z odbiorem UPO → komenda `jpk`.
+  e-Dokumenty z odbiorem UPO,
+- **`ufirma`** — komenda CLI spinająca oba pakiety.
 
 Wszystkie przebiegi (uwierzytelnianie, wysyłka i pobieranie faktur, budowa
 i wysyłka JPK, UPO) są weryfikowane testami e2e na środowiskach testowych MF.
@@ -28,38 +31,39 @@ MF oraz bramkę e-Dokumenty.
 Projekt zarządzany przez [uv](https://docs.astral.sh/uv/), Python 3.14:
 
 ```bash
-uv sync          # tworzy .venv i instaluje komendy `ksef` oraz `jpk`
+uv sync          # tworzy .venv i instaluje komendę `ufirma`
 ```
 
 ## CLI — typowy miesiąc rozliczeniowy
 
 ```bash
 # 1. Pobierz XML faktur sprzedaży za miesiąc (pliki: faktury/<numer-ksef>.xml)
-ksef download --from 2026-01-01 --to 2026-01-31 \
+ufirma ksef download --from 2026-01-01 --to 2026-01-31 \
     --nip 1111111111 --token "$KSEF_TOKEN" --env prod
 
 # 2. Zbuduj JPK_V7M(3) za okres (plik: jpk/JPK_V7M_2026-01.xml);
 #    JDG: --first-name/--last-name/--birth-date, spółka: --name
-jpk generate --period 2026-01 --nip 1111111111 \
+ufirma jpk generate --period 2026-01 --nip 1111111111 \
     --first-name Jan --last-name Kowalski --birth-date 1980-05-01 \
     --email jan@example.com --tax-office 0202
 
 # 3. Wyślij do bramki e-Dokumenty i odbierz UPO
 #    (plik UPO: jpk/JPK_V7M_2026-01.upo.xml)
-jpk send jpk/JPK_V7M_2026-01.xml --cert cert.pem --key key.pem --env prod
+ufirma jpk send jpk/JPK_V7M_2026-01.xml --cert cert.pem --key key.pem --env prod
 
 # 3'. Osoba fizyczna (JDG) bez podpisu kwalifikowanego — dane autoryzujące:
 #     kwota przychodu za rok podatkowy o dwa lata wcześniejszy (0 gdy brak)
-jpk send jpk/JPK_V7M_2026-01.xml --revenue 123456.78 --nip 1111111111 \
+ufirma jpk send jpk/JPK_V7M_2026-01.xml --revenue 123456.78 --nip 1111111111 \
     --first-name Jan --last-name Kowalski --birth-date 1980-05-01 --env prod
 ```
 
-Do tego `jpk send --no-wait` + `jpk status <numer-referencyjny>` (sprawdzenie
-wyniku później, `--upo plik.xml` zapisuje UPO) oraz opcje `--input-dir`/
-`--output-dir`, gdy katalogi `faktury/` i `jpk/` mają być inne.
+Do tego `ufirma jpk send --no-wait` + `ufirma jpk status <numer-referencyjny>`
+(sprawdzenie wyniku później, `--upo plik.xml` zapisuje UPO) oraz opcje
+`--input-dir`/`--output-dir`, gdy katalogi `faktury/` i `jpk/` mają być inne.
 
-Uwierzytelnianie w `ksef download`: token KSeF (`--token`) **albo** certyfikat
-z kluczem (`--cert` + `--key`, pliki PEM). Uwierzytelnienie w `jpk send` —
+Uwierzytelnianie w `ufirma ksef download`: token KSeF (`--token`) **albo**
+certyfikat z kluczem (`--cert` + `--key`, pliki PEM). Uwierzytelnienie
+w `ufirma jpk send` —
 jedna z dwóch metod: `--cert` + `--key` (podpis XAdES; na produkcji
 kwalifikowany lub zaufany, na środowisku testowym może być samopodpisany)
 **albo** dane autoryzujące, dostępne tylko dla podatnika będącego osobą
@@ -67,15 +71,14 @@ fizyczną: `--revenue` (kwota przychodu z zeznania za rok podatkowy o dwa lata
 wcześniejszy) razem z `--nip`/`--pesel`, `--first-name`, `--last-name`
 i `--birth-date` — bez żadnego certyfikatu.
 
-Zamiast opcji można ustawić zmienne środowiskowe — dla `ksef download`:
-`KSEF_NIP`, `KSEF_TOKEN`, `KSEF_CERT`, `KSEF_KEY`, `KSEF_ENV`; dla komend
-`jpk`: `JPK_NIP`, `JPK_TAXPAYER_EMAIL`, `JPK_TAX_OFFICE`, `JPK_TAXPAYER_NAME`
-(spółka) lub `JPK_TAXPAYER_FIRST_NAME` / `JPK_TAXPAYER_LAST_NAME` /
-`JPK_TAXPAYER_BIRTH_DATE` (JDG), `JPK_CERT` / `JPK_KEY` albo `JPK_PESEL` /
-`JPK_REVENUE`, oraz `JPK_BRAMKA_ENV`. Kompletny przykład dla JDG:
-[`.env.example`](.env.example) (skopiuj do `.env` i załaduj np.
-`set -a; source .env; set +a`). Pełna lista opcji: `ksef download --help`,
-`jpk --help`.
+Zamiast opcji można ustawić zmienne środowiskowe — dla `ufirma ksef download`:
+`KSEF_NIP`, `KSEF_TOKEN`, `KSEF_CERT`, `KSEF_KEY`, `KSEF_ENV`; dla
+`ufirma jpk generate`/`send`/`status`: `JPK_NIP`, `JPK_TAXPAYER_EMAIL`,
+`JPK_TAX_OFFICE`, `JPK_TAXPAYER_NAME` (spółka) lub `JPK_TAXPAYER_FIRST_NAME` /
+`JPK_TAXPAYER_LAST_NAME` / `JPK_TAXPAYER_BIRTH_DATE` (JDG), `JPK_CERT` /
+`JPK_KEY` albo `JPK_PESEL` / `JPK_REVENUE`, oraz `JPK_BRAMKA_ENV`. Kompletny
+przykład dla JDG: [`.env.example`](.env.example) (skopiuj do `.env` i załaduj
+np. `set -a; source .env; set +a`). Pełna lista opcji: `ufirma --help`.
 
 ## API Pythona
 
@@ -228,6 +231,7 @@ uv run pytest                 # wszystkie, z e2e na środowiskach testowych MF
                               # (wymagają sieci; samowystarczalne, bez konfiguracji)
 ```
 
-Struktura: `src/ksef/` (klient + CLI), `src/jpk/` (FA(3) → JPK → bramka + CLI),
-`schemas/` (lokalne XSD do walidacji offline), `tests/` (offline + e2e).
+Struktura: `src/ksef/` (klient KSeF), `src/jpk/` (FA(3) → JPK → bramka),
+`src/ufirma/` (CLI), `schemas/` (lokalne XSD do walidacji offline),
+`tests/` (offline + e2e).
 Szczegóły techniczne i zweryfikowane fakty o API: `CLAUDE.md`.

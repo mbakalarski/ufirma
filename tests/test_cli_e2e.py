@@ -1,4 +1,4 @@
-"""Test e2e ksef-tool na środowisku testowym KSeF: download → generate-jpk (wymaga sieci)."""
+"""Test e2e CLI ufirma na środowisku testowym KSeF: download → generate (wymaga sieci)."""
 
 import time
 from datetime import UTC, datetime
@@ -16,8 +16,7 @@ from typer.testing import CliRunner
 from jpk import JPK_V7M_NAMESPACE
 from ksef import Environment, KsefClient
 from ksef.testing import build_test_invoice, generate_test_certificate, random_nip
-from jpk.cli import app as jpk_app
-from ksef.cli import app
+from ufirma.cli import app
 
 pytestmark = pytest.mark.e2e
 
@@ -58,6 +57,7 @@ def test_download_and_generate_jpk(tmp_path: Path) -> None:
         result = runner.invoke(
             app,
             [
+                "ksef",
                 "download",
                 "--from",
                 today.isoformat(),
@@ -84,8 +84,9 @@ def test_download_and_generate_jpk(tmp_path: Path) -> None:
 
     output = tmp_path / "jpk" / f"JPK_V7M_{today.strftime('%Y-%m')}.xml"
     result = runner.invoke(
-        jpk_app,
+        app,
         [
+            "jpk",
             "generate",
             "--period",
             today.strftime("%Y-%m"),

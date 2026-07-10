@@ -6,8 +6,7 @@ from typer.testing import CliRunner
 from jpk import JPK_V7M_NAMESPACE
 from jpk.v7m import ETD_NAMESPACE
 from ksef.testing import FA3_NAMESPACE, build_test_invoice, random_nip
-from jpk.cli import app as jpk_app
-from ksef.cli import app
+from ufirma.cli import app
 
 NS = {"jpk": JPK_V7M_NAMESPACE, "etd": ETD_NAMESPACE}
 SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "jpk_v7m" / "jpk_v7m.xsd"
@@ -37,8 +36,9 @@ def test_generate_jpk(tmp_path: Path) -> None:
     output = tmp_path / "out" / "JPK_V7M_2026-01.xml"
 
     result = runner.invoke(
-        jpk_app,
+        app,
         [
+            "jpk",
             "generate",
             "--period",
             "2026-01",
@@ -79,8 +79,9 @@ def test_generate_jpk_natural_person(tmp_path: Path) -> None:
     output = tmp_path / "out" / "JPK_V7M_2026-01.xml"
 
     result = runner.invoke(
-        jpk_app,
+        app,
         [
+            "jpk",
             "generate",
             "--period",
             "2026-01",
@@ -114,8 +115,9 @@ def test_generate_jpk_requires_taxpayer_identity(tmp_path: Path) -> None:
     invoices_dir.mkdir()
     write_invoice(invoices_dir, random_nip(), "FV/1/2026", "2026-01-15")
     result = runner.invoke(
-        jpk_app,
+        app,
         [
+            "jpk",
             "generate",
             "--period",
             "2026-01",
@@ -136,8 +138,9 @@ def test_generate_jpk_requires_taxpayer_identity(tmp_path: Path) -> None:
 
 def test_generate_jpk_rejects_bad_period(tmp_path: Path) -> None:
     result = runner.invoke(
-        jpk_app,
+        app,
         [
+            "jpk",
             "generate",
             "--period",
             "styczeń 2026",
@@ -159,8 +162,9 @@ def test_generate_jpk_rejects_bad_period(tmp_path: Path) -> None:
 
 def test_generate_jpk_requires_invoices(tmp_path: Path) -> None:
     result = runner.invoke(
-        jpk_app,
+        app,
         [
+            "jpk",
             "generate",
             "--period",
             "2026-01",
@@ -195,7 +199,7 @@ _NO_SEND_ENV = {
 def test_send_requires_exactly_one_auth_method(tmp_path: Path) -> None:
     jpk_file = tmp_path / "JPK_V7M_2026-01.xml"
     jpk_file.write_bytes(b"<JPK/>")
-    result = runner.invoke(jpk_app, ["send", str(jpk_file)], env=_NO_SEND_ENV)
+    result = runner.invoke(app, ["jpk", "send", str(jpk_file)], env=_NO_SEND_ENV)
     assert result.exit_code == 1
     assert "jedną metodę uwierzytelnienia" in result.output
 
@@ -204,8 +208,8 @@ def test_send_auth_data_requires_personal_data(tmp_path: Path) -> None:
     jpk_file = tmp_path / "JPK_V7M_2026-01.xml"
     jpk_file.write_bytes(b"<JPK/>")
     result = runner.invoke(
-        jpk_app,
-        ["send", str(jpk_file), "--revenue", "0", "--nip", random_nip()],
+        app,
+        ["jpk", "send", str(jpk_file), "--revenue", "0", "--nip", random_nip()],
         env=_NO_SEND_ENV,
     )
     assert result.exit_code == 1
@@ -216,6 +220,7 @@ def test_download_requires_credentials(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
+            "ksef",
             "download",
             "--from",
             "2026-01-01",
