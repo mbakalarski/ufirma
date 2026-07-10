@@ -2,7 +2,7 @@
 
 Projekt **ufirma** (nazwa w `pyproject.toml`): obsługa KSeF (Krajowy System e-Faktur) w Pythonie — klient KSeF API 2.0 (pakiet biblioteczny `ksef`), budowa i wysyłka dokumentów JPK (pakiet biblioteczny `jpk`), jedna wspólna komenda CLI `ufirma` (pakiet `ufirma`, entry point `ufirma = "ufirma.cli:app"`). Układ `src/` z trzema pakietami (`[tool.uv.build-backend] module-name = ["ksef", "jpk", "ufirma"]`), zarządzany przez **uv**. Licencja MIT (plik `LICENSE`, nota o braku odpowiedzialności w README). Dokumentacja: README zwięzłe dla użytkownika końcowego (scenariusz JDG → faktura do USA w USD → bramka z danymi autoryzującymi, przez `.env`); szczegóły w `doc/` (`cli.md` — pełny opis komend i env, `api.md` — API Pythona, `rozwoj.md` — zakres, testy, struktura). Komunikacja z użytkownikiem po polsku. **Nie używać poleceń git** — commitami zarządza użytkownik (chyba że wprost poprosi). **Nie zapisywać żadnych plików poza katalogiem projektu** (dotyczy też pamięci Claude w `~/.claude` — notatki kontekstowe trzymać tutaj, w CLAUDE.md; pliki tymczasowe w scratchpadzie sesji). **Nie ruszać pliku `.env`** (nie tworzyć, nie modyfikować, nie przywracać) — zarządza nim wyłącznie użytkownik; wzorzec konfiguracji utrzymywać w `.env.example`.
 
-Kontekst użytkownika: prowadzi JDG (w JPK `Podmiot1` = OsobaFizyczna), VAT rozlicza **miesięcznie** (JPK_V7M; V7K niepotrzebny). Główny przypadek: faktury sprzedaży do kontrahenta z USA w USD (nabywca BrakID) — tego nie obsługuje e-mikrofirma i to była motywacja projektu.
+Główny scenariusz projektu: JDG (w JPK `Podmiot1` = OsobaFizyczna) rozliczająca VAT **miesięcznie** (JPK_V7M; V7K poza zakresem), z fakturami sprzedaży zagranicznej w walucie obcej — np. dla kontrahenta z USA w USD (nabywca BrakID). Tego nie obsługuje e-mikrofirma i to była motywacja projektu.
 
 ## Komendy
 
@@ -10,6 +10,8 @@ Kontekst użytkownika: prowadzi JDG (w JPK `Podmiot1` = OsobaFizyczna), VAT rozl
 - `uv run pytest` — wszystkie testy; testy z markerem `e2e` (pliki `tests/test_*_e2e.py`) uderzają w **żywe środowisko testowe KSeF** i wymagają sieci; są samowystarczalne (losowy NIP + samopodpisany certyfikat, bez env)
 - `uv run pytest -m "not e2e"` — tylko testy offline
 - `uv add <pkg>` / `uv add --dev <pkg>` — zależności (nie używać pip)
+- `python3 scripts/check_schemas.py` — kontrola (stdlib, bez zależności), czy schematy w `schemas/` i `authv2.xsd` KSeF są zgodne z aktualnie publikowanymi przez MF; porównanie ignoruje atrybuty `schemaLocation` (lokalizowane przy wendorowaniu); mapa plik→URL upstreamu w skrypcie; UWAGA: crd.gov.pl wymaga przeglądarkowego User-Agenta (403 dla domyślnych) i przekierowuje na https, a oryginalne `schemaLocation` mają sufiksy wersji (np. `StrukturyDanych_v10-0E.xsd`)
+- CI: `.github/workflows/ci.yml` (testy offline przy push/PR), `.github/workflows/okresowe.yml` (poniedziałki + ręcznie: aktualność schematów i pełne e2e), `renovate.json` (aktualizacje zależności i akcji)
 
 ## Struktura
 

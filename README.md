@@ -23,7 +23,7 @@ nazwisko, data urodzenia, przychód z zeznania).
 ## Instalacja i konfiguracja
 
 ```bash
-git clone https://github.com/mbakalarski/ksef && cd ksef
+git clone https://github.com/mbakalarski/ufirma && cd ufirma
 uv sync                  # tworzy .venv i instaluje komendę `ufirma`
 
 cp .env.example .env     # uzupełnij swoimi danymi (NIP, token, imię…)

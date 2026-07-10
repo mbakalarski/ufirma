@@ -13,8 +13,9 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 
-# Eksporty sesji Claude
+# Eksporty sesji i lokalne ustawienia Claude
 .claude-export-*
+.claude/
 
 # Sekrety i dane lokalne (wyniki ksef download / jpk generate)
 .env

@@ -22,6 +22,17 @@ uv run pytest                 # wszystkie, z e2e na środowiskach testowych MF
                               # (wymagają sieci; samowystarczalne, bez konfiguracji)
 ```
 
+## CI i kontrola okresowa
+
+- `.github/workflows/ci.yml` — testy offline przy każdym pushu i PR,
+- `.github/workflows/okresowe.yml` (poniedziałki, także ręcznie przez
+  `workflow_dispatch`) — kontrola, czy schematy w `schemas/` są zgodne
+  z aktualnie publikowanymi przez MF (`python3 scripts/check_schemas.py`,
+  porównanie z pominięciem lokalizowanych `schemaLocation`), oraz pełne
+  testy e2e na środowiskach testowych KSeF i bramki e-Dokumenty,
+- `renovate.json` — automatyczne PR-y z aktualizacjami zależności
+  (uv.lock, GitHub Actions).
+
 ## Struktura
 
 - `src/ksef/` — klient KSeF API 2.0 (uwierzytelnianie XAdES/token,
