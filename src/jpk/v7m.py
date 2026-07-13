@@ -329,7 +329,7 @@ def build_jpk_v7m(
     month: int,
     tax_office_code: str,
     purpose: int = 1,
-    system_name: str = "ksef-python",
+    system_name: str = "ufirma",
     generated_at: datetime | None = None,
 ) -> bytes:
     """Zbuduj JPK_V7M(3) z faktur sprzedaży FA(3) pobranych z KSeF.

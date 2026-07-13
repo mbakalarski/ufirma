@@ -120,7 +120,7 @@ def build_test_invoice(
     kod.set("wersjaSchemy", "1-0E")
     el(naglowek, "WariantFormularza", "3")
     el(naglowek, "DataWytworzeniaFa", today.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    el(naglowek, "SystemInfo", "ksef-python (testy)")
+    el(naglowek, "SystemInfo", "ufirma (testy)")
 
     podmiot1 = el(root, "Podmiot1")
     dane1 = el(podmiot1, "DaneIdentyfikacyjne")
