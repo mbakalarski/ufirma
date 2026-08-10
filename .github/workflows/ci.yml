@@ -19,8 +19,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
@@ -31,8 +31,8 @@ jobs:
     name: Build distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       - run: uv build
@@ -45,7 +45,7 @@ jobs:
           assert (files('jpk') / 'schemas' / 'jpk_v7m' / 'jpk_v7m.xsd').is_file();
           assert (files('jpk') / 'certs' / 'bramka-prod.pem').is_file();
           print('package resources OK')"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/

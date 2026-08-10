@@ -20,5 +20,5 @@ jobs:
     name: Copies match MF upstream
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: python3 scripts/check_schemas.py --vendored
