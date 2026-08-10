@@ -13,7 +13,7 @@ jobs:
     name: Newer forms and live schemas
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # The token only lifts the anonymous rate limit on the GitHub API call
       # that lists the KSeF invoice schemas; the script works without it.
       - run: python3 scripts/check_schemas.py --upstream
@@ -24,7 +24,7 @@ jobs:
     name: e2e tests against MF test environments
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
