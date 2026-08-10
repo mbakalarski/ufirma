@@ -1,6 +1,6 @@
 [project]
 name = "ufirma"
-version = "0.1.0"
+version = "0.1.1"
 description = "ufirma: pobieranie faktur z KSeF, budowa JPK_V7M i wysyłka do bramki e-Dokumenty"
 readme = "README.md"
 license = "MIT"

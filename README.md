@@ -31,8 +31,8 @@ set -a; source .env; set +a
 ```
 
 Windows (PowerShell) — wczytanie `.env` wygląda inaczej,
-zob. [doc/cli.md](doc/cli.md#windows-powershell). Instalacja ze źródeł
-(do rozwoju projektu) — [doc/rozwoj.md](doc/rozwoj.md).
+zob. [doc/cli.md](https://github.com/mbakalarski/ufirma/blob/main/doc/cli.md#windows-powershell). Instalacja ze źródeł
+(do rozwoju projektu) — [doc/rozwoj.md](https://github.com/mbakalarski/ufirma/blob/main/doc/rozwoj.md).
 
 ## Miesiąc rozliczeniowy w trzech krokach
 
@@ -57,14 +57,14 @@ plik.
 
 ## Więcej
 
-- [doc/cli.md](doc/cli.md) — wszystkie opcje i zmienne środowiskowe,
+- [doc/cli.md](https://github.com/mbakalarski/ufirma/blob/main/doc/cli.md) — wszystkie opcje i zmienne środowiskowe,
   spółka, podpis certyfikatem, środowiska testowe MF
-- [doc/api.md](doc/api.md) — użycie z Pythona (pakiety `ksef` i `jpk`)
-- [doc/rozwoj.md](doc/rozwoj.md) — struktura projektu, testy, zakres
+- [doc/api.md](https://github.com/mbakalarski/ufirma/blob/main/doc/api.md) — użycie z Pythona (pakiety `ksef` i `jpk`)
+- [doc/rozwoj.md](https://github.com/mbakalarski/ufirma/blob/main/doc/rozwoj.md) — struktura projektu, testy, zakres
 
 ## Licencja i odpowiedzialność
 
-[MIT](LICENSE) — oprogramowanie „TAKIE, JAKIE JEST", **bez gwarancji
+[MIT](https://github.com/mbakalarski/ufirma/blob/main/LICENSE) — oprogramowanie „TAKIE, JAKIE JEST", **bez gwarancji
 i odpowiedzialności autora**. To nie jest porada podatkowa; za poprawność
 rozliczeń odpowiada użytkownik, który powinien zweryfikować wygenerowany
 JPK przed wysyłką na środowisko produkcyjne MF.

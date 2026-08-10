@@ -50,9 +50,24 @@ jobs:
           name: dist
           path: dist/
 
+  e2e:
+    name: e2e against MF test environments
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync
+      # Live KSeF and e-Dokumenty test environments. Runs in parallel with the
+      # build and gates publishing: a release is the one moment where paying
+      # for a slower, network-dependent check is clearly worth it. The suite is
+      # self-sufficient (random NIP, self-signed certificate, no secrets).
+      - run: uv run pytest -m e2e
+
   publish:
     name: Publish
-    needs: build
+    needs: [build, e2e]
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'release' && 'pypi' || inputs.repository }}
     permissions:
