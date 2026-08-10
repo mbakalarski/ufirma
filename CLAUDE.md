@@ -105,17 +105,17 @@ Zrobione (wszystko zweryfikowane e2e na TEST, testy zielone):
 - Wysyłka JPK do bramki e-Dokumenty (`jpk/bramka.py`): pełny przebieg ZIP→AES→XAdES→upload→UPO zweryfikowany e2e na `test-e-dokumenty.mf.gov.pl` — status 200 i UPO (`tests/test_bramka_e2e.py`); uwierzytelnienie danymi autoryzującymi (`AuthData`, bez certyfikatu — dla osób fizycznych) też zweryfikowane e2e (status 200 + UPO)
 - Jedna komenda CLI `ufirma` (`download`/`generate`/`send`/`status`, pakiet `ufirma`) — scalona z dawnych komend `ksef` i `jpk` przy zmianie nazwy projektu na **ufirma** (2026-07-10); pętla wysyłka→download→generate zweryfikowana e2e (`tests/test_cli_e2e.py`); zmienne env: `KSEF_*` dla `download`, `JPK_*` dla reszty
 
-Dystrybucja na PyPI — **wydane 0.1.0 (2026-08-10)**, https://pypi.org/project/ufirma/:
+Dystrybucja na PyPI — **wydane 0.1.0 i 0.1.1 (2026-08-10)**, https://pypi.org/project/ufirma/:
 - metadane w `pyproject.toml`: klasyfikatory, `keywords`, `[project.urls]`, `license`+`license-files` (bez klasyfikatora licencji — PEP 639 i uv o to ostrzega)
 - **`lxml` dopisany do `dependencies`** — wcześniej wchodził tylko tranzytywnie przez `signxml`, co dla instalacji z PyPI było błędem
 - `requires-python = ">=3.11"` (obniżone z 3.14; 3.11 to najniższa wersja bez zmian w kodzie — `datetime.UTC`, `StrEnum`, `typing.Self`); sprawdzone: cała siatka offline przechodzi na 3.11, wheel instaluje się i działa
 - `[tool.uv.build-backend] source-include` dokłada do sdist `tests/`, `doc/`, `scripts/`, `.env.example`
 - wheel zawiera `jpk/schemas/` i `jpk/certs/` (job `package` w CI to weryfikuje przy każdym pushu)
 - walidacja XSD u użytkownika: `validate_jpk_v7m()` + `--no-validate` w `generate`/`send`
-- publikacja: `publish.yml`, Trusted Publishing (OIDC) — wydawca zaufany skonfigurowany na pypi.org i test.pypi.org, środowiska GitHuba `pypi`/`testpypi` istnieją. Przebieg zweryfikowany: próbne wydanie na TestPyPI, potem release `v0.1.0` → PyPI (oba joby zielone, 51 s)
+- publikacja: `publish.yml`, Trusted Publishing (OIDC) — wydawca zaufany skonfigurowany na pypi.org i test.pypi.org, środowiska GitHuba `pypi`/`testpypi` istnieją. Przebieg zweryfikowany: próbne wydanie na TestPyPI, potem release `v0.1.0` → PyPI (51 s); `v0.1.1` przeszło już z jobem e2e (build + e2e + publish, wszystkie zielone)
 - `publish.yml` przed publikacją: testy offline, **pełne e2e przeciw środowiskom testowym MF** (osobny job, blokuje `publish`), `check_schemas.py --upstream`, zgodność tagu z wersją
 - procedura wydania: podnieść `version` w `pyproject.toml` + `uv lock`, opcjonalnie `gh workflow run publish.yml -f repository=testpypi`, potem `gh release create vX.Y.Z`
-- README: linki do `doc/` i `LICENSE` muszą być **bezwzględne** (`github.com/.../blob/main/...`) — PyPI renderuje README bez przepisywania ścieżek, więc względne rozwiązują się do `pypi.org/project/ufirma/doc/...`. UWAGA: opis na PyPI jest przypisany do wersji i niezmienny — poprawka README zobaczy świat dopiero w kolejnym wydaniu
+- README: linki do `doc/` i `LICENSE` muszą być **bezwzględne** (`github.com/.../blob/main/...`) — PyPI renderuje README bez przepisywania ścieżek, więc względne rozwiązują się do `pypi.org/project/ufirma/doc/...`. UWAGA: opis na PyPI jest przypisany do wersji i niezmienny — dlatego strona 0.1.0 na zawsze zostaje z popsutymi linkami, a poprawka wymagała wydania 0.1.1 (zawartość 0.1.1: właśnie te linki + job e2e w `publish.yml`, zero zmian w działaniu programu)
 - weryfikacja wydania: instalacja z PyPI w czystym środowisku 3.11, `ufirma --help`, obecność `jpk/schemas/**` i `jpk/certs/**`, pełny `jpk generate` + `validate_jpk_v7m` na schemacie z paczki
 
 Do zrobienia (propozycje kolejnych kroków):
