@@ -1,4 +1,4 @@
-"""Parsowanie faktur FA(3) pobranych z KSeF na model danych do budowy JPK."""
+"""Parsing FA(3) invoices downloaded from KSeF into the model used to build JPK."""
 
 from __future__ import annotations
 
@@ -12,8 +12,9 @@ from jpk.exceptions import JpkError
 
 FA3_NAMESPACE = "http://crd.gov.pl/wzor/2025/06/25/13775/"
 
-# Pola kwotowe elementu Fa (podstawy P_13_* i podatek P_14_*, w tym warianty
-# *W — podatek przeliczony na PLN dla faktur w walucie obcej).
+# Amount fields of the Fa element: tax bases P_13_* and tax P_14_*, including
+# the *W variants, which carry the tax converted to PLN on foreign currency
+# invoices.
 AMOUNT_FIELDS = (
     "P_13_1",
     "P_14_1",
@@ -42,10 +43,10 @@ AMOUNT_FIELDS = (
 
 @dataclass(frozen=True)
 class Buyer:
-    """Identyfikacja nabywcy (Podmiot2/DaneIdentyfikacyjne) na potrzeby JPK.
+    """Buyer identification (Podmiot2/DaneIdentyfikacyjne) as needed by JPK.
 
-    ``tin`` to numer do pola NrKontrahenta (``BRAK`` gdy nabywca bez
-    identyfikatora), ``country_code`` trafia do KodKrajuNadaniaTIN.
+    ``tin`` is the number for the NrKontrahenta field (``BRAK`` when the buyer
+    has no identifier); ``country_code`` goes into KodKrajuNadaniaTIN.
     """
 
     tin: str
@@ -55,14 +56,14 @@ class Buyer:
 
 @dataclass(frozen=True)
 class Fa3Invoice:
-    """Faktura sprzedaży FA(3) pobrana z KSeF.
+    """A sales invoice in FA(3) format, downloaded from KSeF.
 
-    ``amounts`` trzyma kwoty pod nazwami pól FA(3) (``P_13_1`` = podstawa
-    22/23% itd.); pola nieobecne na fakturze nie mają wpisu (metoda
-    ``amount()`` zwraca wtedy 0). ``ksef_number`` pochodzi z metadanych KSeF
-    (XML faktury go nie zawiera). ``exchange_rate`` to kurs przeliczenia na
-    PLN dla faktur w walucie obcej (z ``FaWiersz/KursWaluty`` albo podany
-    przy parsowaniu).
+    ``amounts`` keeps the amounts under their FA(3) field names (``P_13_1`` is
+    the 22/23% base and so on); fields absent from the invoice have no entry,
+    and ``amount()`` then returns 0. ``ksef_number`` comes from KSeF metadata,
+    as the invoice XML itself does not carry it. ``exchange_rate`` is the rate
+    used to convert to PLN on foreign currency invoices — either read from
+    ``FaWiersz/KursWaluty`` or supplied when parsing.
     """
 
     ksef_number: str
@@ -78,7 +79,7 @@ class Fa3Invoice:
     exchange_rate: Decimal | None = None
 
     def amount(self, fa_field: str) -> Decimal:
-        """Kwota pola FA(3) (np. ``P_13_1``); 0 gdy pola nie ma na fakturze."""
+        """Amount of an FA(3) field (e.g. ``P_13_1``); 0 when absent from the invoice."""
         return self.amounts.get(fa_field, Decimal("0"))
 
 
@@ -114,7 +115,7 @@ def _parse_buyer(root: etree._Element) -> Buyer:
 
 
 def _parse_exchange_rate(fa: etree._Element) -> Decimal | None:
-    """Kurs z wierszy faktury — o ile wszystkie wiersze mają ten sam kurs."""
+    """Rate taken from the invoice lines, provided every line agrees on it."""
     rates = {
         Decimal(text.strip())
         for text in fa.xpath(
@@ -127,12 +128,12 @@ def _parse_exchange_rate(fa: etree._Element) -> Decimal | None:
 def parse_invoice(
     xml: bytes, ksef_number: str, exchange_rate: Decimal | None = None
 ) -> Fa3Invoice:
-    """Sparsuj XML faktury FA(3) (bajty pobrane przez ``KsefClient.get_invoice``).
+    """Parse an FA(3) invoice XML (bytes from ``KsefClient.get_invoice``).
 
-    ``ksef_number`` należy wziąć z metadanych (``InvoiceMetadata.ksef_number``)
-    lub z wyniku wysyłki — sam XML faktury nie zawiera numeru KSeF.
-    ``exchange_rate`` (kurs przeliczenia na PLN, potrzebny przy walucie obcej)
-    ma pierwszeństwo przed kursem odczytanym z ``FaWiersz/KursWaluty``.
+    Take ``ksef_number`` from the metadata (``InvoiceMetadata.ksef_number``) or
+    from the send result — the invoice XML does not contain the KSeF number.
+    ``exchange_rate`` (the PLN conversion rate, needed for foreign currency)
+    takes precedence over the rate read from ``FaWiersz/KursWaluty``.
     """
     root = etree.fromstring(xml)
     if root.tag != f"{{{FA3_NAMESPACE}}}Faktura":

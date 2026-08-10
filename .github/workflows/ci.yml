@@ -7,12 +7,45 @@ on:
 
 jobs:
   test:
-    name: Testy offline
+    name: Offline tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Lower bound from requires-python, plus the version used for
+        # development. Windows is here because the end users are Polish sole
+        # traders on Windows, and its console code page (cp1250/cp852) has
+        # already broken CLI output once.
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - run: uv sync --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} pytest -m "not e2e"
+
+  package:
+    name: Build distribution
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync
-      - run: uv run pytest -m "not e2e"
+      - run: uv build
+      # Installing from the wheel proves the package data (MF schemas, gateway
+      # certificates) actually made it into the distribution.
+      - run: uv run --isolated --no-project --with dist/*.whl ufirma --help
+      - run: >
+          uv run --isolated --no-project --with dist/*.whl
+          python -c "from importlib.resources import files;
+          assert (files('jpk') / 'schemas' / 'jpk_v7m' / 'jpk_v7m.xsd').is_file();
+          assert (files('jpk') / 'certs' / 'bramka-prod.pem').is_file();
+          print('package resources OK')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

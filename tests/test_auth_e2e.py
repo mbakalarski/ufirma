@@ -1,4 +1,4 @@
-"""Testy e2e uwierzytelniania na środowisku testowym KSeF (wymagają sieci)."""
+"""e2e authentication tests against the KSeF TEST environment (need network)."""
 
 import time
 
@@ -11,10 +11,10 @@ pytestmark = pytest.mark.e2e
 
 
 def _generate_ksef_token(client: KsefClient) -> str:
-    """Generuje token KSeF przez API i czeka na jego aktywację.
+    """Generate a KSeF token through the API and wait until it becomes active.
 
-    Pomocnik testowy — generowanie tokenów świadomie nie wchodzi do biblioteki
-    (tokeny mają być dostarczane z zewnątrz), stąd surowe wywołania API.
+    Test helper only: token generation is deliberately kept out of the library
+    (tokens are meant to be provided from outside), hence the raw API calls.
     """
     created = client._request(
         "POST",
@@ -33,7 +33,7 @@ def _generate_ksef_token(client: KsefClient) -> str:
             return created["token"]
         assert status == "Pending", f"token w nieoczekiwanym stanie {status}"
         time.sleep(1)
-    pytest.fail("token KSeF nie osiągnął stanu Active w 60 s")
+    pytest.fail("KSeF token did not reach the Active state within 60 s")
 
 
 def test_fetch_challenge() -> None:
@@ -52,8 +52,8 @@ def test_authenticate_with_self_signed_certificate() -> None:
         assert tokens.refresh_token.token
         assert client.access_token is tokens.access_token
 
-        # Nie porównujemy tokenów: JWT ma sekundową ziarnistość iat/exp,
-        # więc refresh w tej samej sekundzie zwraca identyczny token.
+        # Do not compare the tokens: JWT iat/exp have one-second granularity,
+        # so refreshing within the same second returns an identical token.
         refreshed = client.refresh_access_token()
         assert refreshed.token
         assert client.access_token is refreshed

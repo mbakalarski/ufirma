@@ -1,4 +1,4 @@
-"""Testy e2e wysyłki i pobierania faktur na środowisku testowym KSeF (wymagają sieci)."""
+"""e2e invoice send/download tests on the KSeF TEST environment (need network)."""
 
 import time
 from datetime import UTC, datetime, timedelta
@@ -16,12 +16,12 @@ def test_query_invoice_metadata_empty() -> None:
     certificate, private_key = generate_test_certificate(nip)
     with KsefClient(Environment.TEST) as client:
         client.authenticate_with_certificate(nip, certificate, private_key)
-        # Zakres dat maks. 3 miesiące; Subject1 = faktury wystawione (sprzedaż).
+        # Date range spans at most 3 months; Subject1 = issued (sales) invoices.
         page = client.query_invoice_metadata(
             "Subject1",
             date_from=datetime.now(UTC) - timedelta(days=88),
         )
-        # Świeży losowy NIP nie ma faktur — sprawdzamy przebieg i parsowanie.
+        # A fresh random NIP has no invoices; this checks the flow and parsing.
         assert page.invoices == []
         assert page.has_more is False
 
@@ -41,11 +41,11 @@ def test_send_invoice_and_download() -> None:
         assert invoice.ksef_number
         assert invoice.invoice_number == "FV/1/2026"
 
-        # Pobranie XML po numerze KSeF (repozytorium może dostać fakturę z opóźnieniem).
+        # Fetch the XML by KSeF number (the repository may lag behind a little).
         downloaded = _retry(lambda: client.get_invoice(invoice.ksef_number), timeout=60)
         assert downloaded == invoice_xml
 
-        # Faktura powinna też pojawić się w metadanych sprzedawcy.
+        # The invoice should also show up in the seller's metadata.
         def find_metadata():
             page = client.query_invoice_metadata(
                 "Subject1", date_from=datetime.now(UTC) - timedelta(days=1)

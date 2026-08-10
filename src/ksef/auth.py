@@ -1,4 +1,4 @@
-"""Budowanie i podpisywanie dokumentu AuthTokenRequest (KSeF API 2.0)."""
+"""Building and signing the AuthTokenRequest document (KSeF API 2.0)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from lxml import etree
 
 AUTH_NAMESPACE = "http://ksef.mf.gov.pl/auth/token/2.0"
 
-# Dozwolone typy identyfikatora kontekstu wg authv2.xsd
+# Context identifier types allowed by authv2.xsd.
 CONTEXT_NIP = "Nip"
 CONTEXT_INTERNAL_ID = "InternalId"
 CONTEXT_NIP_VAT_UE = "NipVatUe"
@@ -22,7 +22,7 @@ def build_auth_token_request(
     context_value: str,
     subject_identifier_type: str = "certificateSubject",
 ) -> etree._Element:
-    """Zbuduj niepodpisany dokument AuthTokenRequest zgodny z authv2.xsd."""
+    """Build an unsigned AuthTokenRequest document conforming to authv2.xsd."""
     ns = f"{{{AUTH_NAMESPACE}}}"
     root = etree.Element(f"{ns}AuthTokenRequest", nsmap={None: AUTH_NAMESPACE})
     etree.SubElement(root, f"{ns}Challenge").text = challenge
@@ -37,7 +37,7 @@ def sign_xades(
     certificate: Certificate,
     private_key: PrivateKeyTypes,
 ) -> bytes:
-    """Podpisz dokument podpisem XAdES-BES (enveloped) i zwróć XML jako bajty."""
+    """Sign the document with an enveloped XAdES-BES signature; return XML bytes."""
     from signxml.xades import XAdESSigner
 
     cert_pem = certificate.public_bytes(serialization.Encoding.PEM).decode()

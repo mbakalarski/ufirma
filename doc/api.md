@@ -50,6 +50,21 @@ rozliczyć (marża, OSS, odwrotne obciążenie, waluta bez kursu…),
 `build_jpk_v7m` odrzuca wyjątkiem `JpkError` — zamiast po cichu zbudować
 błędny plik.
 
+Gotowy dokument sprawdzisz oficjalnym schematem MF dołączonym do paczki
+(bez sieci i bez własnej kopii XSD):
+
+```python
+from jpk import JpkError, validate_jpk_v7m
+
+try:
+    validate_jpk_v7m(jpk_xml)          # nic nie zwraca, gdy plik jest poprawny
+except JpkError as exc:
+    print(exc)                         # element, linia i powód niezgodności
+```
+
+Wersję wzoru, którą waliduje zainstalowana paczka, podaje
+`jpk.JPK_V7M_SCHEMA_VERSION` (data publikacji w CRWDE).
+
 ## Wysyłka JPK do bramki i odbiór UPO
 
 ```python

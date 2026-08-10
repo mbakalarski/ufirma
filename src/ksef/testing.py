@@ -1,7 +1,7 @@
-"""Narzędzia do pracy ze środowiskiem testowym KSeF.
+"""Helpers for working against the KSeF TEST environment.
 
-Środowisko TEST dopuszcza samopodpisane certyfikaty i wymaga używania
-losowych NIP-ów (dane nie są izolowane między integratorami).
+TEST accepts self-signed certificates and requires random NIPs, because data
+there is not isolated between integrators.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ FA3_NAMESPACE = "http://crd.gov.pl/wzor/2025/06/25/13775/"
 
 
 def random_nip() -> str:
-    """Wylosuj NIP z poprawną cyfrą kontrolną (do użycia na środowisku testowym)."""
+    """Draw a random NIP with a valid check digit (for the TEST environment)."""
     while True:
         digits = [random.randint(1, 9) for _ in range(3)] + [
             random.randint(0, 9) for _ in range(6)
@@ -36,12 +36,12 @@ def generate_test_certificate(
     organization_name: str = "Testowa Firma Sp. z o.o.",
     valid_days: int = 2,
 ) -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
-    """Wygeneruj samopodpisany certyfikat pieczęci firmowej z NIP-em.
+    """Generate a self-signed company seal certificate carrying the NIP.
 
-    NIP trafia do pola organizationIdentifier (OID 2.5.4.97) jako ``VATPL-{nip}``
-    (wymóg uwierzytelniania KSeF typu certificateSubject) oraz do pola
-    serialNumber (OID 2.5.4.5) jako ``TINPL-{nip}`` (wymóg bramki e-Dokumenty
-    przy wysyłce JPK). Wyłącznie do środowisk testowych.
+    The NIP goes into organizationIdentifier (OID 2.5.4.97) as ``VATPL-{nip}``,
+    which KSeF requires for certificateSubject authentication, and into
+    serialNumber (OID 2.5.4.5) as ``TINPL-{nip}``, which the e-Dokumenty gateway
+    requires when submitting JPK. Test environments only.
     """
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name(
@@ -95,12 +95,11 @@ def build_test_invoice(
     exchange_rate: str | None = None,
     buyer_country: str = "PL",
 ) -> bytes:
-    """Zbuduj minimalną fakturę FA(3) VAT (jedna pozycja, stawka 23%).
+    """Build a minimal FA(3) VAT invoice (single line, 23% rate).
 
-    ``buyer_nip=None`` daje nabywcę bez identyfikatora podatkowego (BrakID).
-    Dla waluty obcej podaj ``vat_pln`` (P_14_1W, podatek przeliczony na PLN)
-    i ``exchange_rate`` (KursWaluty w wierszu). Wyłącznie do środowiska
-    testowego KSeF.
+    ``buyer_nip=None`` produces a buyer without a tax identifier (BrakID).
+    For a foreign currency pass ``vat_pln`` (P_14_1W, tax converted to PLN)
+    and ``exchange_rate`` (KursWaluty on the line). KSeF TEST environment only.
     """
 
     def el(

@@ -1,4 +1,4 @@
-"""Operacje kryptograficzne wymagane przez KSeF API 2.0."""
+"""Cryptographic operations required by the KSeF API 2.0."""
 
 from __future__ import annotations
 
@@ -28,27 +28,27 @@ def _rsa_oaep_encrypt(payload: bytes, certificate_der: bytes) -> bytes:
 def encrypt_ksef_token(
     ksef_token: str, timestamp_ms: int, certificate_der: bytes
 ) -> str:
-    """Zaszyfruj token KSeF do postaci wymaganej przez POST /auth/ksef-token.
+    """Encrypt a KSeF token the way POST /auth/ksef-token expects it.
 
-    Szyfrowany jest ciąg ``{token}|{timestampMs}`` algorytmem RSA-OAEP (SHA-256)
-    kluczem publicznym MF; wynik zwracany jako Base64.
+    The string ``{token}|{timestampMs}`` is encrypted with RSA-OAEP (SHA-256)
+    under the MF public key; the result is returned Base64-encoded.
     """
     payload = f"{ksef_token}|{timestamp_ms}".encode()
     return base64.b64encode(_rsa_oaep_encrypt(payload, certificate_der)).decode()
 
 
 def generate_symmetric_key() -> tuple[bytes, bytes]:
-    """Wygeneruj klucz AES-256 (32 B) i wektor inicjalizujący (16 B)."""
+    """Generate an AES-256 key (32 B) and an initialization vector (16 B)."""
     return os.urandom(32), os.urandom(16)
 
 
 def encrypt_symmetric_key(key: bytes, certificate_der: bytes) -> str:
-    """Zaszyfruj klucz symetryczny kluczem publicznym MF (RSA-OAEP/SHA-256), Base64."""
+    """Encrypt the symmetric key with the MF public key (RSA-OAEP/SHA-256), Base64."""
     return base64.b64encode(_rsa_oaep_encrypt(key, certificate_der)).decode()
 
 
 def encrypt_aes_256_cbc(data: bytes, key: bytes, iv: bytes) -> bytes:
-    """Zaszyfruj dane AES-256-CBC z dopełnieniem PKCS#7 (format faktur w sesji)."""
+    """Encrypt data with AES-256-CBC and PKCS#7 padding (session invoice format)."""
     padder = symmetric_padding.PKCS7(128).padder()
     padded = padder.update(data) + padder.finalize()
     encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()

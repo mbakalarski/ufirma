@@ -1,18 +1,20 @@
 import dataclasses
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
 from lxml import etree
 
-from jpk import JpkError, Taxpayer, build_jpk_v7m, parse_invoice
+from jpk import JpkError, Taxpayer, build_jpk_v7m, parse_invoice, validate_jpk_v7m
 from jpk.v7m import ETD_NAMESPACE, JPK_V7M_NAMESPACE
 from ksef.testing import build_test_invoice, random_nip
 
 NS = {"jpk": JPK_V7M_NAMESPACE, "etd": ETD_NAMESPACE}
-SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "jpk_v7m" / "jpk_v7m.xsd"
-FA3_SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "fa3" / "fa3.xsd"
+SCHEMAS = Path(str(files("jpk"))) / "schemas"
+SCHEMA_PATH = SCHEMAS / "jpk_v7m" / "jpk_v7m.xsd"
+FA3_SCHEMA_PATH = SCHEMAS / "fa3" / "fa3.xsd"
 
 
 def ksef_number(nip: str) -> str:
@@ -74,7 +76,7 @@ def test_build_jpk_v7m_validates_against_schema() -> None:
     first = parsed_test_invoice(
         seller_nip, "FV/1/2026", net="100.00", vat="23.00", gross="123.00"
     )
-    # Faktura z pozycjami 8% i zwolnionymi (spreparowana na sparsowanym modelu).
+    # Invoice with 8% and exempt lines, faked on top of the parsed model.
     second = dataclasses.replace(
         parsed_test_invoice(seller_nip, "FV/2/2026"),
         amounts={
@@ -120,7 +122,7 @@ def test_build_jpk_v7m_rounds_declaration_to_full_pln() -> None:
     pozycje = doc.find("jpk:Deklaracja/jpk:PozycjeSzczegolowe", namespaces=NS)
     assert pozycje.findtext("jpk:P_19", namespaces=NS) == "101"
     assert pozycje.findtext("jpk:P_20", namespaces=NS) == "23"
-    # Ewidencja pozostaje w groszach.
+    # The records stay denominated in grosz.
     row = doc.find("jpk:Ewidencja/jpk:SprzedazWiersz", namespaces=NS)
     assert row.findtext("jpk:K_19", namespaces=NS) == "100.50"
     assert row.findtext("jpk:K_20", namespaces=NS) == "23.12"
@@ -151,7 +153,7 @@ def test_build_jpk_v7m_natural_person() -> None:
     osoba = doc.find("jpk:Podmiot1/jpk:OsobaFizyczna", namespaces=NS)
     assert osoba is not None
     assert doc.find("jpk:Podmiot1/jpk:OsobaNiefizyczna", namespaces=NS) is None
-    # Pola identyfikatora osoby fizycznej są w namespace etd (StrukturyDanych).
+    # Natural person identity fields live in the etd namespace (StrukturyDanych).
     assert osoba.findtext("etd:NIP", namespaces=NS) == seller_nip
     assert osoba.findtext("etd:ImiePierwsze", namespaces=NS) == "Jan"
     assert osoba.findtext("etd:Nazwisko", namespaces=NS) == "Kowalski"
@@ -230,10 +232,10 @@ def test_build_jpk_v7m_foreign_currency_converts_to_pln() -> None:
     doc = build_valid_jpk([invoice], taxpayer)
 
     row = doc.find("jpk:Ewidencja/jpk:SprzedazWiersz", namespaces=NS)
-    # Kontrahent bez identyfikatora: NrKontrahenta=BRAK, bez KodKrajuNadaniaTIN.
+    # Counterparty without an identifier: NrKontrahenta=BRAK, no KodKrajuNadaniaTIN.
     assert row.find("jpk:KodKrajuNadaniaTIN", namespaces=NS) is None
     assert row.findtext("jpk:NrKontrahenta", namespaces=NS) == "BRAK"
-    # Podstawa przeliczona kursem (100.00 × 3.65), podatek z P_14_1W.
+    # Base converted by the rate (100.00 * 3.65), tax taken from P_14_1W.
     assert row.findtext("jpk:K_19", namespaces=NS) == "365.00"
     assert row.findtext("jpk:K_20", namespaces=NS) == "84.00"
 
@@ -243,8 +245,8 @@ def test_build_jpk_v7m_foreign_currency_converts_to_pln() -> None:
 
 
 def test_build_jpk_v7m_foreign_currency_without_vat_pln_field() -> None:
-    # Sprzedaż NP (poza terytorium kraju) w USD — bez pól P_14_xW; podstawa
-    # i (zerowy) podatek przeliczane kursem podanym jawnie.
+    # Out-of-scope sales (outside the country) in USD, with no P_14_xW fields:
+    # base and (zero) tax are converted using the explicitly supplied rate.
     seller_nip = random_nip()
     taxpayer = Taxpayer(nip=seller_nip, name="Testowa Firma", email="f@example.com")
     invoice = dataclasses.replace(
@@ -283,3 +285,31 @@ def test_build_jpk_v7m_rejects_unsupported_fa_fields() -> None:
         build_jpk_v7m(
             [invoice], taxpayer=taxpayer, year=2026, month=3, tax_office_code="0202"
         )
+
+
+def test_validate_jpk_v7m_accepts_built_document() -> None:
+    seller_nip = random_nip()
+    taxpayer = Taxpayer(
+        nip=seller_nip, name="Testowa Firma Sp. z o.o.", email="firma@example.com"
+    )
+    xml = build_jpk_v7m(
+        [parsed_test_invoice(seller_nip)],
+        taxpayer=taxpayer,
+        year=2026,
+        month=3,
+        tax_office_code="0202",
+    )
+    validate_jpk_v7m(xml)  # schema from package resources, not a repo path
+
+
+def test_validate_jpk_v7m_reports_offending_element() -> None:
+    with pytest.raises(JpkError) as excinfo:
+        validate_jpk_v7m(b'<JPK xmlns="http://crd.gov.pl/wzor/2025/12/19/14090/"/>')
+    message = str(excinfo.value)
+    assert "JPK_V7M(3)" in message
+    assert "Naglowek" in message  # wskazuje brakujący element, nie tylko „błąd"
+
+
+def test_validate_jpk_v7m_rejects_malformed_xml() -> None:
+    with pytest.raises(JpkError, match="poprawnym XML-em"):
+        validate_jpk_v7m(b"<JPK>")

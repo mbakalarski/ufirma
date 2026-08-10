@@ -1,4 +1,4 @@
-"""Test e2e wysyłki JPK do bramki test-e-dokumenty.mf.gov.pl (wymaga sieci)."""
+"""e2e JPK submission test against test-e-dokumenty.mf.gov.pl (needs network)."""
 
 from datetime import UTC, date, datetime
 
@@ -41,13 +41,14 @@ def test_send_jpk_to_test_gateway() -> None:
 
 
 def test_send_jpk_with_auth_data_to_test_gateway() -> None:
-    """Uwierzytelnienie danymi autoryzującymi (bez podpisu XAdES) — tylko JDG.
+    """Authentication with authorizing data (no XAdES), natural persons only.
 
-    Środowisko TEST niedeterministycznie weryfikuje prawdziwość danych
-    autoryzujących: losowy NIP czasem daje 200 + UPO, a czasem 419 „Dane
-    niezgodne z prawdą". Oba wyniki dowodzą, że element AuthData został
-    poprawnie odszyfrowany i sparsowany — błędy implementacji to kody
-    417 (szyfrowanie), 418 (schemat XSD) i 426 (kodowanie znaków).
+    The TEST environment verifies the truthfulness of authorizing data
+    non-deterministically: a random NIP sometimes yields 200 + UPO and
+    sometimes 419 "data inconsistent with the truth". Either outcome proves the
+    AuthData element was decrypted and parsed correctly — implementation errors
+    would surface as 417 (encryption), 418 (XSD schema) or 426 (character
+    encoding).
     """
     nip = random_nip()
     birth_date = date(1980, 5, 1)

@@ -43,6 +43,10 @@ ufirma jpk generate --period 2026-01 --nip 1111111111 \
 - Waluty obce: podstawa przeliczana kursem z faktury
   (`FaWiersz/KursWaluty`), VAT z pól `P_14_xW`; nabywca bez NIP/VAT-UE
   (`BrakID`) trafia do ewidencji jako `BRAK`.
+- Gotowy plik jest sprawdzany schematem MF dołączonym do paczki; przy
+  niezgodności nic się nie zapisuje, a komunikat wskazuje element i linię.
+  `--no-validate` pomija sprawdzenie (przydatne, gdyby MF opublikowało
+  nowszy wzór, zanim wyjdzie nowa wersja `ufirma`).
 - Zmienne środowiskowe: `JPK_NIP`, `JPK_TAXPAYER_EMAIL`,
   `JPK_TAX_OFFICE`, `JPK_TAXPAYER_NAME` (spółka) lub
   `JPK_TAXPAYER_FIRST_NAME` / `JPK_TAXPAYER_LAST_NAME` /
@@ -64,6 +68,8 @@ ufirma jpk send jpk/JPK_V7M_2026-01.xml --revenue 123456.78 \
 ufirma jpk send jpk/JPK_V7M_2026-01.xml --cert cert.pem --key key.pem --env prod
 ```
 
+- Przed wysyłką plik jest sprawdzany schematem MF (`--no-validate`
+  pomija) — bramka odrzuciłaby niezgodny dokument samym kodem 401.
 - Po przyjęciu (status 200) UPO ląduje obok pliku jako
   `<nazwa>.upo.xml`; odrzucenie = komunikat i kod wyjścia 1.
 - `--no-wait` nie czeka na wynik — sprawdzisz go później:
@@ -77,6 +83,36 @@ ufirma jpk send jpk/JPK_V7M_2026-01.xml --cert cert.pem --key key.pem --env prod
 Uwaga: na produkcji kwota przychodu musi dokładnie zgadzać się
 z zeznaniem — inaczej bramka odrzuci dokument (status 419 „Dane
 niezgodne z prawdą").
+
+## Windows (PowerShell)
+
+Instalacja i komendy są takie same, różni się tylko wczytanie `.env`
+i drobiazgi powłoki:
+
+```powershell
+uv tool install ufirma
+uv tool update-shell     # dopisuje katalog z ufirma.exe do PATH (raz)
+
+# uwaga: w Windows PowerShell 5.1 `curl` to alias Invoke-WebRequest,
+# więc pobieraj przez curl.exe
+curl.exe -O https://raw.githubusercontent.com/mbakalarski/ufirma/main/.env.example
+Move-Item .env.example .env    # uzupełnij swoimi danymi
+
+# odpowiednik `set -a; source .env; set +a` — wczytuje zmienne do bieżącej sesji
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
+        Set-Item "env:$($Matches[1])" $Matches[2].Trim().Trim('"')
+    }
+}
+
+ufirma ksef download --from 2026-01-01 --to 2026-01-31
+```
+
+Pliki (faktury, JPK, UPO) zapisywane są w UTF-8, a komunikaty komendy
+przetrwają przekierowanie do pliku mimo domyślnej strony kodowej
+konsoli (cp1250/cp852). Zmienne ustawione powyżej żyją do zamknięcia
+okna; na stałe: `setx KSEF_TOKEN "..."` (wymaga nowej sesji) albo
+ustawienie ich w profilu PowerShella.
 
 ## Środowiska MF
 

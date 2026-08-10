@@ -13,8 +13,8 @@ nazwisko, data urodzenia, przychód z zeznania).
 
 ## Czego potrzebujesz
 
-- [uv](https://docs.astral.sh/uv/) — odpowiedniego Pythona pobierze sam
-  przy `uv sync`,
+- Python 3.11 lub nowszy — najprościej przez
+  [uv](https://docs.astral.sh/uv/), który pobierze go sam,
 - token KSeF (generowany w Aplikacji Podatnika KSeF, uprawnienie
   odczytu faktur),
 - kwota przychodu z zeznania rocznego (np. PIT-36) za rok podatkowy
@@ -23,31 +23,37 @@ nazwisko, data urodzenia, przychód z zeznania).
 ## Instalacja i konfiguracja
 
 ```bash
-git clone https://github.com/mbakalarski/ufirma && cd ufirma
-uv sync                  # tworzy .venv i instaluje komendę `ufirma`
+uv tool install ufirma   # albo: pipx install ufirma / pip install ufirma
 
-cp .env.example .env     # uzupełnij swoimi danymi (NIP, token, imię…)
+curl -O https://raw.githubusercontent.com/mbakalarski/ufirma/main/.env.example
+mv .env.example .env     # uzupełnij swoimi danymi (NIP, token, imię…)
 set -a; source .env; set +a
 ```
+
+Windows (PowerShell) — wczytanie `.env` wygląda inaczej,
+zob. [doc/cli.md](doc/cli.md#windows-powershell). Instalacja ze źródeł
+(do rozwoju projektu) — [doc/rozwoj.md](doc/rozwoj.md).
 
 ## Miesiąc rozliczeniowy w trzech krokach
 
 ```bash
 # 1. Pobierz z KSeF XML faktur sprzedaży za miesiąc → faktury/
-uv run ufirma ksef download --from 2026-01-01 --to 2026-01-31
+ufirma ksef download --from 2026-01-01 --to 2026-01-31
 
 # 2. Zbuduj JPK_V7M(3) za okres → jpk/JPK_V7M_2026-01.xml
-uv run ufirma jpk generate --period 2026-01
+ufirma jpk generate --period 2026-01
 
 # 3. Wyślij do bramki e-Dokumenty i odbierz UPO (dane autoryzujące,
 #    bez certyfikatu) → jpk/JPK_V7M_2026-01.upo.xml
-uv run ufirma jpk send jpk/JPK_V7M_2026-01.xml
+ufirma jpk send jpk/JPK_V7M_2026-01.xml
 ```
 
 Reszta (dane podatnika, kwota przychodu, środowiska) idzie ze zmiennych
-w `.env`. Przypadki, których program nie umie poprawnie rozliczyć
-(marża, OSS, odwrotne obciążenie, waluta bez kursu…), kończą się jasnym
-błędem — zamiast po cichu zbudować zły plik.
+w `.env`. Gotowy JPK jest sprawdzany oficjalnym schematem MF dołączonym
+do paczki, zanim trafi do bramki. Przypadki, których program nie umie
+poprawnie rozliczyć (marża, OSS, odwrotne obciążenie, waluta bez
+kursu…), kończą się jasnym błędem — zamiast po cichu zbudować zły
+plik.
 
 ## Więcej
 

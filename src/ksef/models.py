@@ -35,7 +35,7 @@ class TokenInfo:
 
 @dataclass(frozen=True)
 class AuthenticationInit:
-    """Odpowiedź na zainicjowanie uwierzytelniania (XAdES lub token KSeF)."""
+    """Response to an authentication init (XAdES signature or KSeF token)."""
 
     reference_number: str
     authentication_token: TokenInfo
@@ -81,7 +81,7 @@ class AuthTokens:
 
 @dataclass(frozen=True)
 class OnlineSession:
-    """Otwarta sesja interaktywna wraz z kluczem szyfrującym faktury."""
+    """An open interactive session together with the invoice encryption key."""
 
     reference_number: str
     valid_until: datetime
@@ -91,7 +91,7 @@ class OnlineSession:
 
 @dataclass(frozen=True)
 class SessionInvoice:
-    """Status faktury wysłanej w sesji (``GET /sessions/{ref}/invoices/{invRef}``)."""
+    """Status of an invoice sent in a session (``GET /sessions/{ref}/invoices/{invRef}``)."""
 
     reference_number: str
     ordinal_number: int
@@ -132,7 +132,7 @@ class InvoiceSeller:
 
 @dataclass(frozen=True)
 class InvoiceBuyer:
-    """Nabywca; ``identifier_type``: Nip/VatUe/Other/None."""
+    """Invoice buyer; ``identifier_type``: Nip/VatUe/Other/None."""
 
     identifier_type: str
     identifier_value: str | None
@@ -150,7 +150,7 @@ class InvoiceBuyer:
 
 @dataclass(frozen=True)
 class FormCode:
-    """Kod formularza faktury, np. systemCode ``FA (3)``, value ``FA``."""
+    """Invoice form code, e.g. systemCode ``FA (3)``, value ``FA``."""
 
     system_code: str
     schema_version: str
@@ -167,7 +167,7 @@ class FormCode:
 
 @dataclass(frozen=True)
 class InvoiceMetadata:
-    """Metadane faktury z ``POST /invoices/query/metadata``."""
+    """Invoice metadata from ``POST /invoices/query/metadata``."""
 
     ksef_number: str
     invoice_number: str
@@ -214,7 +214,7 @@ class InvoiceMetadata:
 
 @dataclass(frozen=True)
 class InvoiceMetadataPage:
-    """Strona wyników zapytania o metadane faktur."""
+    """A single result page of an invoice metadata query."""
 
     invoices: list[InvoiceMetadata]
     has_more: bool
@@ -231,7 +231,7 @@ class InvoiceMetadataPage:
 
 @dataclass(frozen=True)
 class EncryptionCertificate:
-    """Certyfikat klucza publicznego MF do szyfrowania (np. tokenów KSeF)."""
+    """MF public key certificate used for encryption (e.g. of KSeF tokens)."""
 
     certificate_der: bytes
     certificate_id: str

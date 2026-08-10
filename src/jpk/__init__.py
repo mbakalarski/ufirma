@@ -1,7 +1,7 @@
-"""Budowa dokumentów JPK (JPK_V7M) na podstawie faktur FA(3) pobranych z KSeF.
+"""Building JPK documents (JPK_V7M) from FA(3) invoices downloaded from KSeF.
 
-Na razie obsługiwane są wyłącznie faktury sprzedaży (podatnik jako Podmiot1);
-w przyszłości możliwa rozbudowa o inne rodzaje faktur.
+Only sales invoices are supported for now (the taxpayer as Podmiot1); other
+kinds of invoices may follow.
 """
 
 from jpk.bramka import (
@@ -13,12 +13,19 @@ from jpk.bramka import (
 )
 from jpk.exceptions import BramkaApiError, JpkError
 from jpk.fa3 import Buyer, Fa3Invoice, parse_invoice
-from jpk.v7m import JPK_V7M_NAMESPACE, Taxpayer, build_jpk_v7m
+from jpk.v7m import (
+    JPK_V7M_NAMESPACE,
+    JPK_V7M_SCHEMA_VERSION,
+    Taxpayer,
+    build_jpk_v7m,
+    validate_jpk_v7m,
+)
 
 __all__ = [
     "BRAMKA_PROD",
     "BRAMKA_TEST",
     "JPK_V7M_NAMESPACE",
+    "JPK_V7M_SCHEMA_VERSION",
     "AuthData",
     "BramkaApiError",
     "BramkaClient",
@@ -29,4 +36,5 @@ __all__ = [
     "Taxpayer",
     "build_jpk_v7m",
     "parse_invoice",
+    "validate_jpk_v7m",
 ]

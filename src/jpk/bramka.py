@@ -1,18 +1,20 @@
-"""Wysyłka JPK do bramki e-Dokumenty MF (spec. interfejsów usług JPK 5.5.1).
+"""Submitting JPK to the MF e-Dokumenty gateway (JPK services spec 5.5.1).
 
-Przebieg: ZIP (DEFLATE) → podział na części ≤60 MB → szyfrowanie AES-256-CBC
-(klucz szyfrowany RSA/ECB/PKCS#1 certyfikatem MF) → uwierzytelniony
-``InitUpload`` na ``POST /api/Storage/InitUploadSigned`` → ``PUT`` części do
-Azure Blob → ``POST /api/Storage/FinishUpload`` → polling
-``GET /api/Storage/Status/{ref}`` (2xx = UPO, 4xx = odrzucony).
+Flow: ZIP (DEFLATE) -> split into parts of at most 60 MB -> AES-256-CBC
+encryption (the key itself encrypted with RSA/ECB/PKCS#1 under the MF
+certificate) -> authenticated ``InitUpload`` to
+``POST /api/Storage/InitUploadSigned`` -> ``PUT`` of every part to Azure Blob
+-> ``POST /api/Storage/FinishUpload`` -> polling
+``GET /api/Storage/Status/{ref}`` (2xx = UPO, 4xx = rejected).
 
-Metadane ``InitUpload`` uwierzytelnia dokładnie jedna z technik:
+Exactly one technique authenticates the ``InitUpload`` metadata:
 
-- podpis XAdES-BES (na produkcji kwalifikowany lub zaufany; na środowisku
-  testowym ``test-e-dokumenty.mf.gov.pl`` akceptowany jest samopodpisany),
-- dane autoryzujące (:class:`AuthData`) — tylko podatnik będący osobą
-  fizyczną; XML ``DaneAutoryzujace`` (schemat SIG-2008_v2-0) szyfrowany tym
-  samym kluczem AES co plik JPK trafia do elementu ``AuthData``.
+- a XAdES-BES signature (qualified or trusted in production; the
+  ``test-e-dokumenty.mf.gov.pl`` test environment accepts self-signed ones),
+- authorizing data (:class:`AuthData`), available only to taxpayers who are
+  natural persons: the ``DaneAutoryzujace`` XML (schema SIG-2008_v2-0),
+  encrypted with the same AES key as the JPK file, goes into the ``AuthData``
+  element.
 """
 
 from __future__ import annotations
@@ -50,18 +52,18 @@ _ENVIRONMENTS = {"test": BRAMKA_TEST, "prod": BRAMKA_PROD}
 _API_VERSION = "01.02.01.20160617"
 _PART_SIZE = 60 * 1024 * 1024
 _FILE_NAME_PATTERN = re.compile(r"[a-zA-Z0-9_.\-]{5,55}")
-# Bramka wymaga deklaracji dokładnie w tej postaci (lxml domyślnie daje apostrofy).
+# The gateway requires exactly this declaration (lxml defaults to apostrophes).
 _XML_DECLARATION = b'<?xml version="1.0" encoding="utf-8"?>'
 
 
 @dataclass(frozen=True)
 class AuthData:
-    """Dane autoryzujące do uwierzytelnienia JPK (tylko osoba fizyczna).
+    """Authorizing data for JPK authentication (natural persons only).
 
-    ``revenue`` to kwota przychodu wykazana w zeznaniu lub rocznym obliczeniu
-    podatku za rok podatkowy o dwa lata wcześniejszy niż rok wysyłki
-    (``0`` gdy nie było przychodu). Wymagany dokładnie jeden identyfikator:
-    ``nip`` albo ``pesel``.
+    ``revenue`` is the revenue reported in the tax return or annual tax
+    computation for the tax year two years before the year of submission
+    (``0`` when there was none). Exactly one identifier is required: ``nip``
+    or ``pesel``.
     """
 
     first_name: str
@@ -81,7 +83,7 @@ class AuthData:
 
 @dataclass(frozen=True)
 class SubmissionStatus:
-    """Status przetwarzania dokumentu w bramce (odpowiedź metody Status)."""
+    """Processing status of a document in the gateway (Status method response)."""
 
     code: int
     description: str
@@ -131,7 +133,7 @@ def _encrypt_aes_cbc(data: bytes, key: bytes, iv: bytes) -> bytes:
 def _sign_xades(
     element: etree._Element, certificate: x509.Certificate, private_key: PrivateKeyTypes
 ) -> bytes:
-    """Podpisz XAdES-BES (enveloped); deklaracja XML zgodnie z wymogiem bramki."""
+    """Sign with enveloped XAdES-BES; XML declaration as the gateway demands."""
     from signxml.xades import XAdESSigner
 
     cert_pem = certificate.public_bytes(serialization.Encoding.PEM).decode()
@@ -145,7 +147,7 @@ def _sign_xades(
 
 
 def build_auth_data(auth_data: AuthData) -> bytes:
-    """Zbuduj XML ``DaneAutoryzujace`` zgodny ze schematem SIG-2008_v2-0."""
+    """Build the ``DaneAutoryzujace`` XML conforming to schema SIG-2008_v2-0."""
     try:
         revenue = Decimal(str(auth_data.revenue)).quantize(Decimal("0.01"))
     except InvalidOperation as exc:
@@ -182,7 +184,7 @@ def build_init_upload(
     form_code: str,
     encrypted_auth_data: bytes | None = None,
 ) -> etree._Element:
-    """Zbuduj (niepodpisany) dokument InitUpload zgodny ze schematem bramki."""
+    """Build the (unsigned) InitUpload document conforming to the gateway schema."""
     ns = f"{{{INITUPLOAD_NAMESPACE}}}"
     root = etree.Element(f"{ns}InitUpload", nsmap={None: INITUPLOAD_NAMESPACE})
     etree.SubElement(root, f"{ns}DocumentType").text = "JPK"
@@ -240,7 +242,7 @@ def build_init_upload(
 
 
 class BramkaClient:
-    """Klient bramki e-Dokumenty MF do wysyłki plików JPK."""
+    """Client of the MF e-Dokumenty gateway for submitting JPK files."""
 
     def __init__(self, environment: str = "test", *, timeout: float = 60.0) -> None:
         if environment not in _ENVIRONMENTS:
@@ -270,12 +272,12 @@ class BramkaClient:
         schema_version: str = "1-0E",
         form_code: str = "JPK_VAT",
     ) -> str:
-        """Wyślij dokument JPK; zwróć numer referencyjny sesji.
+        """Send a JPK document; return the session reference number.
 
-        Metadane uwierzytelnia dokładnie jedna z technik:
-        ``certificate`` + ``private_key`` — podpis XAdES (na produkcji
-        kwalifikowany lub zaufany) — albo ``auth_data`` — dane autoryzujące
-        (tylko podatnik będący osobą fizyczną).
+        Exactly one technique authenticates the metadata: ``certificate`` plus
+        ``private_key`` for a XAdES signature (qualified or trusted in
+        production), or ``auth_data`` for authorizing data (available only to
+        taxpayers who are natural persons).
         """
         if (certificate is None) != (private_key is None):
             raise JpkError("Podpis XAdES wymaga certyfikatu razem z kluczem")
@@ -360,7 +362,7 @@ class BramkaClient:
         return reference_number
 
     def get_status(self, reference_number: str) -> SubmissionStatus:
-        """Pobierz status przetwarzania (z UPO po pozytywnym zakończeniu)."""
+        """Fetch the processing status (including the UPO once accepted)."""
         response = self._http.get(
             f"{self._base_url}/api/Storage/Status/{reference_number}"
         )
@@ -381,7 +383,7 @@ class BramkaClient:
         poll_interval: float = 5.0,
         poll_timeout: float = 600.0,
     ) -> SubmissionStatus:
-        """Odpytuj status aż do zakończenia przetwarzania (2xx/4xx) lub timeoutu."""
+        """Poll the status until processing finishes (2xx/4xx) or the timeout hits."""
         deadline = time.monotonic() + poll_timeout
         while True:
             status = self.get_status(reference_number)

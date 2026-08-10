@@ -1,7 +1,8 @@
-"""Test e2e CLI ufirma na środowisku testowym KSeF: download → generate (wymaga sieci)."""
+"""e2e CLI test on the KSeF TEST environment: download -> generate (needs network)."""
 
 import time
 from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,7 @@ from ufirma.cli import app
 pytestmark = pytest.mark.e2e
 
 NS = {"jpk": JPK_V7M_NAMESPACE}
-SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "jpk_v7m" / "jpk_v7m.xsd"
+SCHEMA_PATH = Path(str(files("jpk"))) / "schemas" / "jpk_v7m" / "jpk_v7m.xsd"
 
 runner = CliRunner()
 
@@ -30,7 +31,7 @@ def test_download_and_generate_jpk(tmp_path: Path) -> None:
     nip = random_nip()
     certificate, private_key = generate_test_certificate(nip)
 
-    # Wystaw fakturę sprzedaży na środowisku testowym.
+    # Issue a sales invoice on the test environment.
     with KsefClient(Environment.TEST) as client:
         client.authenticate_with_certificate(nip, certificate, private_key)
         session = client.open_online_session()
@@ -51,7 +52,7 @@ def test_download_and_generate_jpk(tmp_path: Path) -> None:
     invoices_dir = tmp_path / "faktury"
     downloaded = invoices_dir / f"{invoice.ksef_number}.xml"
 
-    # Metadane potrafią pojawić się z opóźnieniem — ponawiamy pobieranie.
+    # Metadata can show up with a delay, so retry the download.
     deadline = time.monotonic() + 120
     while True:
         result = runner.invoke(

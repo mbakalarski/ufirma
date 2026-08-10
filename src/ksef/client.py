@@ -50,10 +50,10 @@ class Environment(StrEnum):
 
 
 class KsefClient:
-    """Klient KSeF API 2.0.
+    """KSeF API 2.0 client.
 
-    Po udanym uwierzytelnieniu ``access_token`` jest automatycznie dołączany
-    jako nagłówek Bearer do kolejnych wywołań.
+    After a successful authentication the ``access_token`` is attached
+    automatically as a Bearer header on every subsequent call.
     """
 
     def __init__(
@@ -106,7 +106,7 @@ class KsefClient:
             raise KsefApiError(response.status_code, response.text)
         return response
 
-    # --- Uwierzytelnianie: operacje elementarne ---
+    # --- Authentication: individual operations ---
 
     def fetch_challenge(self) -> AuthChallenge:
         response = self._request("POST", "/auth/challenge")
@@ -171,7 +171,7 @@ class KsefClient:
         response = self._request("GET", "/security/public-key-certificates")
         return [EncryptionCertificate.from_json(item) for item in response.json()]
 
-    # --- Uwierzytelnianie: pełne przebiegi ---
+    # --- Authentication: complete flows ---
 
     def authenticate_with_certificate(
         self,
@@ -182,7 +182,7 @@ class KsefClient:
         poll_interval: float = 1.0,
         poll_timeout: float = 120.0,
     ) -> AuthTokens:
-        """Uwierzytelnij się podpisem XAdES w kontekście podanego NIP."""
+        """Authenticate with a XAdES signature in the context of the given NIP."""
         challenge = self.fetch_challenge()
         request = build_auth_token_request(challenge.challenge, CONTEXT_NIP, nip)
         signed_xml = sign_xades(request, certificate, private_key)
@@ -198,7 +198,7 @@ class KsefClient:
         poll_interval: float = 1.0,
         poll_timeout: float = 120.0,
     ) -> AuthTokens:
-        """Uwierzytelnij się tokenem KSeF w kontekście podanego NIP."""
+        """Authenticate with a KSeF token in the context of the given NIP."""
         challenge = self.fetch_challenge()
         certificate = self._pick_encryption_certificate(_TOKEN_ENCRYPTION_USAGE)
         encrypted = encrypt_ksef_token(
@@ -210,12 +210,12 @@ class KsefClient:
         self._wait_for_authentication(init, poll_interval, poll_timeout)
         return self.redeem_tokens(init.authentication_token.token)
 
-    # --- Wysyłka faktur: sesja interaktywna ---
+    # --- Sending invoices: interactive session ---
 
     def open_online_session(
         self, form_code: dict[str, str] = FORM_CODE_FA3
     ) -> OnlineSession:
-        """Otwórz sesję interaktywną; klucz AES generowany i szyfrowany automatycznie."""
+        """Open an interactive session; the AES key is generated and encrypted here."""
         key, iv = generate_symmetric_key()
         certificate = self._pick_encryption_certificate(_SYMMETRIC_KEY_ENCRYPTION_USAGE)
         response = self._request(
@@ -241,7 +241,7 @@ class KsefClient:
         )
 
     def send_invoice(self, session: OnlineSession, invoice_xml: bytes) -> str:
-        """Wyślij fakturę w sesji; zwraca numer referencyjny faktury."""
+        """Send an invoice within a session; returns the invoice reference number."""
         encrypted = encrypt_aes_256_cbc(invoice_xml, session.key, session.iv)
         response = self._request(
             "POST",
@@ -272,7 +272,7 @@ class KsefClient:
         poll_interval: float = 1.0,
         poll_timeout: float = 120.0,
     ) -> SessionInvoice:
-        """Czekaj, aż faktura dostanie numer KSeF (status 200); ≥300 = odrzucenie."""
+        """Wait until the invoice gets a KSeF number (status 200); >=300 means rejected."""
         deadline = time.monotonic() + poll_timeout
         while True:
             invoice = self.get_session_invoice(
@@ -295,10 +295,10 @@ class KsefClient:
             time.sleep(poll_interval)
 
     def close_online_session(self, session: OnlineSession) -> None:
-        """Zamknij sesję; KSeF asynchronicznie generuje zbiorcze UPO."""
+        """Close the session; KSeF generates the collective UPO asynchronously."""
         self._request("POST", f"/sessions/online/{session.reference_number}/close")
 
-    # --- Pobieranie faktur ---
+    # --- Downloading invoices ---
 
     def query_invoice_metadata(
         self,
@@ -310,12 +310,12 @@ class KsefClient:
         page_offset: int = 0,
         page_size: int = 100,
     ) -> InvoiceMetadataPage:
-        """Pobierz stronę metadanych faktur.
+        """Fetch a single page of invoice metadata.
 
-        ``subject_type``: rola w fakturze — ``Subject1`` (sprzedawca),
-        ``Subject2`` (nabywca), ``Subject3``, ``SubjectAuthorized``.
-        ``date_type``: ``Issue``/``Invoicing``/``PermanentStorage``;
-        zakres dat maks. 3 miesiące.
+        ``subject_type``: role on the invoice — ``Subject1`` (seller),
+        ``Subject2`` (buyer), ``Subject3``, ``SubjectAuthorized``.
+        ``date_type``: ``Issue``/``Invoicing``/``PermanentStorage``; the date
+        range may span at most 3 months.
         """
         date_range: dict[str, Any] = {
             "dateType": date_type,
@@ -340,7 +340,7 @@ class KsefClient:
         date_type: str = "Issue",
         page_size: int = 100,
     ) -> Iterator[InvoiceMetadata]:
-        """Iteruj po metadanych faktur, przechodząc kolejne strony wyników."""
+        """Iterate over invoice metadata, walking through the result pages."""
         page_offset = 0
         while True:
             page = self.query_invoice_metadata(
@@ -357,7 +357,7 @@ class KsefClient:
             page_offset += 1
 
     def get_invoice(self, ksef_number: str) -> bytes:
-        """Pobierz XML faktury po numerze KSeF."""
+        """Download the invoice XML by its KSeF number."""
         response = self._request(
             "GET",
             f"/invoices/ksef/{ksef_number}",

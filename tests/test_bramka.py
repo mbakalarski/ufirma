@@ -3,6 +3,7 @@ import hashlib
 import io
 import zipfile
 from datetime import date
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ from jpk.bramka import (
 from jpk.bramka import _Part
 
 NS = {"iu": INITUPLOAD_NAMESPACE, "sig": SIG_NAMESPACE}
-SIG_SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "sig" / "sig-2008_v2-0.xsd"
+SIG_SCHEMA_PATH = Path(str(files("jpk"))) / "schemas" / "sig" / "sig-2008_v2-0.xsd"
 
 
 def test_zip_roundtrip() -> None:
@@ -213,7 +214,7 @@ def test_build_init_upload_with_auth_data() -> None:
         form_code="JPK_VAT",
         encrypted_auth_data=encrypted,
     )
-    # AuthData to ostatni element InitUpload (po DocumentList), Base64 szyfrogramu.
+    # AuthData is the last InitUpload element (after DocumentList), Base64 ciphertext.
     auth_el = root[-1]
     assert auth_el.tag == f"{{{INITUPLOAD_NAMESPACE}}}AuthData"
     assert base64.b64decode(auth_el.text) == encrypted

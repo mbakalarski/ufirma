@@ -1,9 +1,9 @@
 class KsefError(Exception):
-    """Bazowy wyjątek klienta KSeF."""
+    """Base exception for the KSeF client."""
 
 
 class KsefApiError(KsefError):
-    """Błąd HTTP zwrócony przez API KSeF."""
+    """HTTP error returned by the KSeF API."""
 
     def __init__(self, status_code: int, body: str) -> None:
         super().__init__(f"KSeF API zwróciło HTTP {status_code}: {body}")
@@ -12,8 +12,8 @@ class KsefApiError(KsefError):
 
 
 class KsefAuthenticationError(KsefError):
-    """Proces uwierzytelniania zakończył się niepowodzeniem."""
+    """Authentication flow did not complete successfully."""
 
 
 class KsefInvoiceError(KsefError):
-    """Faktura została odrzucona przy przetwarzaniu w KSeF."""
+    """Invoice was rejected while being processed by KSeF."""

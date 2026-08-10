@@ -1,0 +1,24 @@
+# Integrity of the vendored MF schemas: do the copies in src/jpk/schemas/ still
+# equal what MF published? Drift can only be introduced by a change to those
+# files (or to the script's URL map), so this runs exactly then — the periodic
+# workflow watches for newer forms instead.
+name: Vendored schemas
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/jpk/schemas/**"
+      - "scripts/check_schemas.py"
+  pull_request:
+    paths:
+      - "src/jpk/schemas/**"
+      - "scripts/check_schemas.py"
+
+jobs:
+  vendored:
+    name: Copies match MF upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 scripts/check_schemas.py --vendored

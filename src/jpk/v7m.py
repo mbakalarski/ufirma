@@ -1,7 +1,7 @@
-"""Budowa JPK_V7M(3) — ewidencja sprzedaży i deklaracja z faktur FA(3) z KSeF.
+"""Building JPK_V7M(3): sales records and declaration from FA(3) KSeF invoices.
 
-Na razie tylko faktury sprzedaży (podatnik jako Podmiot1). Część zakupowa
-ewidencji jest pusta (wymagany ZakupCtrl z zerami).
+Sales invoices only for now (the taxpayer as Podmiot1). The purchase part of
+the records stays empty, with the mandatory zeroed ZakupCtrl.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from functools import lru_cache
+from importlib.resources import as_file, files
 
 from lxml import etree
 
@@ -17,14 +19,17 @@ from jpk.exceptions import JpkError
 from jpk.fa3 import Fa3Invoice
 
 JPK_V7M_NAMESPACE = "http://crd.gov.pl/wzor/2025/12/19/14090/"
-# Typy wspólne MF (StrukturyDanych) — w tym namespace są m.in. pola
-# identyfikatora osoby fizycznej (NIP, ImiePierwsze, Nazwisko, DataUrodzenia).
+# Date the form was published in CRWDE. Quoted in validation errors so users
+# can tell which schema version the installed package validates against.
+JPK_V7M_SCHEMA_VERSION = "2025-12-19"
+# Shared MF types (StrukturyDanych). This namespace holds, among others, the
+# natural person identity fields (NIP, ImiePierwsze, Nazwisko, DataUrodzenia).
 ETD_NAMESPACE = (
     "http://crd.gov.pl/xml/schematy/dziedzinowe/mf/2022/09/13/eD/DefinicjeTypy/"
 )
 
-# Pola FA(3), których nie umiemy jeszcze zmapować na kolumny JPK — jeśli
-# występują na fakturze z niezerową kwotą, odmawiamy budowy pliku.
+# FA(3) fields we cannot map to JPK columns yet. If any of them carries a
+# non-zero amount, we refuse to build the file rather than silently drop it.
 _UNSUPPORTED_FA_FIELDS = {
     "P_13_4": "ryczałt dla taksówek (4%)",
     "P_14_4": "ryczałt dla taksówek (4%)",
@@ -37,7 +42,7 @@ _UNSUPPORTED_FA_FIELDS = {
 
 _SUPPORTED_INVOICE_TYPES = ("VAT", "KOR")
 
-# Kolumny ewidencji sprzedaży wymagane przez schemat parami (podstawa+podatek).
+# Sales record columns the schema requires in pairs (base + tax).
 _K_PAIRS = (("K_15", "K_16"), ("K_17", "K_18"), ("K_19", "K_20"))
 _K_SINGLES_BEFORE_PAIRS = ("K_10", "K_11", "K_12", "K_13")
 _K_SINGLES_AFTER_PAIRS = ("K_21", "K_22")
@@ -49,11 +54,11 @@ _GROSZ = Decimal("0.01")
 
 @dataclass(frozen=True)
 class Taxpayer:
-    """Podatnik (Podmiot1 JPK).
+    """The taxpayer (JPK Podmiot1).
 
-    Spółka (OsobaNiefizyczna): podaj ``name``. Osoba fizyczna / JDG
-    (OsobaFizyczna): podaj ``first_name``, ``last_name`` i ``birth_date``
-    (wszystkie trzy wymaga schemat).
+    Company (OsobaNiefizyczna): pass ``name``. Natural person / sole trader
+    (OsobaFizyczna): pass ``first_name``, ``last_name`` and ``birth_date`` —
+    the schema requires all three.
     """
 
     nip: str
@@ -83,11 +88,12 @@ class Taxpayer:
 
 
 def _pln_amounts(invoice: Fa3Invoice) -> Callable[[str], Decimal]:
-    """Kwoty faktury w PLN: podstawy przeliczone kursem, podatek z pól P_14_xW.
+    """Invoice amounts in PLN: bases converted by rate, tax from P_14_xW fields.
 
-    Dla faktur w walucie obcej podstawy opodatkowania przeliczamy kursem
-    (art. 31a ustawy o VAT), a kwoty podatku bierzemy z pól P_14_xW (podatek
-    w PLN wykazany na fakturze); gdy pola W brak — również przeliczamy kursem.
+    On foreign currency invoices the tax bases are converted using the exchange
+    rate (art. 31a of the VAT act), while tax amounts are taken from the P_14_xW
+    fields, which state the tax in PLN on the invoice itself. When a W field is
+    missing, that amount is converted by the rate as well.
     """
     if invoice.currency == "PLN":
         return invoice.amount
@@ -112,7 +118,7 @@ def _pln_amounts(invoice: Fa3Invoice) -> Callable[[str], Decimal]:
 
 
 def _sales_columns(invoice: Fa3Invoice) -> dict[str, Decimal]:
-    """Zmapuj podstawy/podatek z pól FA(3) na kolumny K ewidencji sprzedaży (w PLN)."""
+    """Map FA(3) bases and tax onto the K columns of the sales records (in PLN)."""
     for fa_field, description in _UNSUPPORTED_FA_FIELDS.items():
         if invoice.amount(fa_field) != _ZERO:
             raise JpkError(
@@ -121,18 +127,18 @@ def _sales_columns(invoice: Fa3Invoice) -> dict[str, Decimal]:
             )
     a = _pln_amounts(invoice)
     return {
-        "K_10": a("P_13_7"),  # sprzedaż zwolniona
-        "K_11": a("P_13_8") + a("P_13_9"),  # poza terytorium kraju
-        "K_12": a("P_13_9"),  # w tym usługi art. 100 ust. 1 pkt 4
-        "K_13": a("P_13_6_1"),  # stawka 0% krajowa
-        "K_15": a("P_13_3"),  # stawka 5%
+        "K_10": a("P_13_7"),  # exempt sales
+        "K_11": a("P_13_8") + a("P_13_9"),  # supplies outside the country
+        "K_12": a("P_13_9"),  # of which services under art. 100(1)(4)
+        "K_13": a("P_13_6_1"),  # domestic 0% rate
+        "K_15": a("P_13_3"),  # 5% rate
         "K_16": a("P_14_3"),
-        "K_17": a("P_13_2"),  # stawka 7/8%
+        "K_17": a("P_13_2"),  # 7/8% rate
         "K_18": a("P_14_2"),
-        "K_19": a("P_13_1"),  # stawka 22/23%
+        "K_19": a("P_13_1"),  # 22/23% rate
         "K_20": a("P_14_1"),
-        "K_21": a("P_13_6_2"),  # WDT
-        "K_22": a("P_13_6_3"),  # eksport towarów
+        "K_21": a("P_13_6_2"),  # intra-community supply of goods
+        "K_22": a("P_13_6_3"),  # export of goods
     }
 
 
@@ -154,7 +160,7 @@ def _money(value: Decimal) -> str:
 
 
 def _round_pln(value: Decimal) -> int:
-    """Zaokrąglij do pełnych złotych (końcówki ≥ 50 gr w górę, art. 63 Ordynacji)."""
+    """Round to whole zloty (>= 50 gr rounds up, art. 63 of the Tax Ordinance)."""
     return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
@@ -221,7 +227,7 @@ def _build_taxpayer(root: etree._Element, taxpayer: Taxpayer) -> None:
 
 
 def _build_declaration(root: etree._Element, totals: dict[str, Decimal]) -> None:
-    """Deklaracja VAT-7: podstawy/podatek w pełnych złotych z sum kolumn K."""
+    """VAT-7 declaration: bases and tax in whole zloty, summed from the K columns."""
     deklaracja = _el(root, "Deklaracja")
     naglowek = _el(deklaracja, "Naglowek")
     kod = _el(naglowek, "KodFormularzaDekl", "VAT-7")
@@ -264,14 +270,15 @@ def _build_declaration(root: etree._Element, totals: dict[str, Decimal]) -> None
 
     pozycje = _el(deklaracja, "PozycjeSzczegolowe")
     _emit_declaration_positions(pozycje, p)
-    # Bez zakupów podatek podlegający wpłacie równa się podatkowi należnemu.
+    # With no purchases, the tax payable equals the output tax.
     _el(pozycje, "P_51", str(p["P_38"]))
     _el(deklaracja, "Pouczenia", "1")
 
 
 def _emit_declaration_positions(pozycje: etree._Element, p: dict[str, int]) -> None:
-    # Pary wymagane przez schemat łącznie: (P_11, P_12), (P_13, P_14),
-    # (P_15, P_16), (P_17, P_18), (P_19, P_20); P_12 i P_14 są w parze opcjonalne.
+    # Pairs the schema requires together: (P_11, P_12), (P_13, P_14),
+    # (P_15, P_16), (P_17, P_18), (P_19, P_20); P_12 and P_14 are optional
+    # members of their pair.
     if p["P_10"]:
         _el(pozycje, "P_10", str(p["P_10"]))
     if p["P_11"] or p["P_12"]:
@@ -332,11 +339,13 @@ def build_jpk_v7m(
     system_name: str = "ufirma",
     generated_at: datetime | None = None,
 ) -> bytes:
-    """Zbuduj JPK_V7M(3) z faktur sprzedaży FA(3) pobranych z KSeF.
+    """Build JPK_V7M(3) from FA(3) sales invoices downloaded from KSeF.
 
-    ``purpose``: 1 = złożenie, 2 = korekta. ``tax_office_code`` — czterocyfrowy
-    kod urzędu skarbowego (walidowany schematem). Zwraca XML zgodny ze
-    schematem ``schemas/jpk_v7m/jpk_v7m.xsd`` (obowiązuje od 2026-02-01).
+    ``purpose``: 1 = submission, 2 = correction. ``tax_office_code`` is the
+    four digit tax office code (checked by the schema). Returns XML conforming
+    to the MF schema bundled with the package
+    (``jpk/schemas/jpk_v7m/jpk_v7m.xsd``, the form applies from 2026-02-01) —
+    check it with ``validate_jpk_v7m()``.
     """
     rows: list[tuple[Fa3Invoice, dict[str, Decimal]]] = []
     for invoice in invoices:
@@ -383,3 +392,39 @@ def build_jpk_v7m(
     _el(zakup_ctrl, "PodatekNaliczony", "0.00")
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+
+@lru_cache(maxsize=1)
+def _jpk_v7m_schema() -> etree.XMLSchema:
+    """Compiled MF schema from package resources (compiling takes about a second)."""
+    resource = files("jpk") / "schemas" / "jpk_v7m" / "jpk_v7m.xsd"
+    # The XSD imports sibling files, so the schema has to be loaded from a real
+    # path, and compilation has to happen before ``as_file`` cleans up.
+    with as_file(resource) as path:
+        return etree.XMLSchema(etree.parse(str(path)))
+
+
+def validate_jpk_v7m(xml: bytes) -> None:
+    """Check a document against the official MF schema bundled with the package.
+
+    Returns nothing; on a mismatch raises ``JpkError`` listing the errors
+    (element, line, reason) — the e-Dokumenty gateway would reject such a file
+    with a bare status 401. The schema is frozen in the released package, so it
+    can be wrong once MF publishes a new form: then either upgrade ``ufirma``
+    or skip validation (``--no-validate`` in the CLI).
+    """
+    try:
+        document = etree.fromstring(xml)
+    except etree.XMLSyntaxError as exc:
+        raise JpkError(f"Plik nie jest poprawnym XML-em: {exc}") from exc
+
+    schema = _jpk_v7m_schema()
+    if schema.validate(document):
+        return
+    details = "\n".join(
+        f"  linia {error.line}: {error.message}" for error in schema.error_log
+    )
+    raise JpkError(
+        "Dokument niezgodny ze schematem JPK_V7M(3) MF"
+        f" (wzór z {JPK_V7M_SCHEMA_VERSION}):\n{details}"
+    )

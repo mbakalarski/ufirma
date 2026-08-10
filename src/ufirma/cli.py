@@ -1,21 +1,25 @@
-"""Komenda ``ufirma`` — pełny obieg rozliczenia VAT z linii poleceń.
+"""The ``ufirma`` command — the whole VAT settlement loop from the shell.
 
-Entry point: ``ufirma = "ufirma.cli:app"``. Dwie grupy podkomend:
-``ufirma ksef download`` (pobranie faktur z KSeF) oraz ``ufirma jpk
-generate``/``send``/``status`` (budowa JPK_V7M, bramka e-Dokumenty, UPO).
+Entry point: ``ufirma = "ufirma.cli:app"``. Two subcommand groups:
+``ufirma ksef download`` (download invoices from KSeF) and ``ufirma jpk
+generate``/``send``/``status`` (build JPK_V7M, e-Dokumenty gateway, UPO).
 
-Konfiguracja przez opcje albo zmienne środowiskowe — dla ``download``:
-``KSEF_NIP``, ``KSEF_TOKEN``, ``KSEF_CERT``/``KSEF_KEY``, ``KSEF_ENV``;
-dla ``generate``/``send``/``status``: ``JPK_NIP``, ``JPK_TAXPAYER_NAME`` lub
+Configuration comes from options or environment variables — for ``download``:
+``KSEF_NIP``, ``KSEF_TOKEN``, ``KSEF_CERT``/``KSEF_KEY``, ``KSEF_ENV``; for
+``generate``/``send``/``status``: ``JPK_NIP``, ``JPK_TAXPAYER_NAME`` or
 ``JPK_TAXPAYER_FIRST_NAME``/``JPK_TAXPAYER_LAST_NAME``/
 ``JPK_TAXPAYER_BIRTH_DATE``, ``JPK_TAXPAYER_EMAIL``, ``JPK_TAX_OFFICE``,
-``JPK_CERT``/``JPK_KEY`` albo ``JPK_PESEL``/``JPK_REVENUE`` oraz
-``JPK_BRAMKA_ENV``. Przykład konfiguracji dla JDG: ``.env.example``.
+``JPK_CERT``/``JPK_KEY`` or ``JPK_PESEL``/``JPK_REVENUE`` and
+``JPK_BRAMKA_ENV``. A sole trader example lives in ``.env.example``.
+
+Note: command docstrings and ``help=`` texts stay in Polish — Typer shows them
+to the end user as CLI help, and the users of this tool are Polish taxpayers.
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -28,7 +32,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from jpk.bramka import AuthData, BramkaClient
 from jpk.exceptions import JpkError
 from jpk.fa3 import parse_invoice
-from jpk.v7m import Taxpayer, build_jpk_v7m
+from jpk.v7m import Taxpayer, build_jpk_v7m, validate_jpk_v7m
 from ksef import Environment, KsefClient, KsefError
 
 app = typer.Typer(
@@ -47,9 +51,11 @@ app.add_typer(jpk_app, name="jpk")
 
 @ksef_app.callback()
 def _ksef() -> None:
-    """Callback utrwala strukturę podkomend (``ufirma ksef download ...``) —
+    """Keep the subcommand structure (``ufirma ksef download ...``) in place.
 
-    bez niego Typer zwinąłby jedyną komendę grupy do jej korzenia.
+    Without this callback Typer would collapse the group's only command into
+    the group root. The group help text comes from ``Typer(help=...)`` above,
+    so this docstring is not user-visible.
     """
 
 
@@ -229,6 +235,13 @@ def generate(
     purpose: Annotated[
         int, typer.Option(help="Cel złożenia: 1 = złożenie, 2 = korekta.")
     ] = 1,
+    validate: Annotated[
+        bool,
+        typer.Option(
+            "--validate/--no-validate",
+            help="Sprawdź wynik schematem MF dołączonym do pakietu.",
+        ),
+    ] = True,
 ) -> None:
     """Zbuduj JPK_V7M(3) z pobranych faktur sprzedaży za podany okres."""
     match = re.fullmatch(r"(\d{4})-(\d{2})", period)
@@ -275,6 +288,15 @@ def generate(
         )
     except JpkError as exc:
         raise _fail(str(exc)) from exc
+
+    if validate:
+        try:
+            validate_jpk_v7m(xml)
+        except JpkError as exc:
+            raise _fail(
+                f"{exc}\n\nPliku nie zapisano. Jeśli MF opublikowało nowszy wzór,"
+                " zaktualizuj ufirma albo powtórz z --no-validate."
+            ) from exc
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"JPK_V7M_{period}.xml"
@@ -360,6 +382,13 @@ def send(
     poll_timeout: Annotated[
         float, typer.Option(help="Maksymalny czas oczekiwania na wynik (sekundy).")
     ] = 600.0,
+    validate: Annotated[
+        bool,
+        typer.Option(
+            "--validate/--no-validate",
+            help="Sprawdź plik schematem MF przed wysyłką (tylko JPK_V7M).",
+        ),
+    ] = True,
 ) -> None:
     """Wyślij plik JPK do bramki e-Dokumenty MF (domyślnie środowisko testowe).
 
@@ -396,6 +425,16 @@ def send(
             " (podpis XAdES) albo --revenue z danymi osobowymi"
             " (dane autoryzujące, tylko osoba fizyczna)."
         )
+
+    if validate:
+        try:
+            validate_jpk_v7m(file.read_bytes())
+        except JpkError as exc:
+            raise _fail(
+                f"{exc}\n\nNie wysłano — bramka odrzuciłaby dokument (status 401)."
+                " Jeśli plik jest innym typem JPK albo MF opublikowało nowszy wzór,"
+                " powtórz z --no-validate."
+            ) from exc
 
     try:
         with BramkaClient(environment.value) as client:
@@ -462,3 +501,23 @@ def status(
         typer.echo(f"UPO zapisane: {upo_output}")
     if submission.is_rejected:
         raise _fail("Dokument odrzucony przez bramkę.")
+
+
+def main() -> None:
+    """Console entry point (``ufirma``), wrapping the Typer app.
+
+    Windows consoles default to a legacy code page (cp1250, cp852) that has no
+    "→", so a status line would die with UnicodeEncodeError the moment output
+    is redirected to a file — after the work was already done, which is the
+    worst possible moment. Force UTF-8 on the way out; if a stream cannot be
+    reconfigured, degrade to replacing unencodable characters instead of
+    failing.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        for attempt in ({"encoding": "utf-8"}, {"errors": "replace"}):
+            try:
+                stream.reconfigure(**attempt)  # type: ignore[union-attr]
+                break
+            except (AttributeError, OSError, ValueError):
+                continue
+    app()

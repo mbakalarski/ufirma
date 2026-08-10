@@ -1,3 +1,7 @@
+import os
+import subprocess
+import sys
+from importlib.resources import files
 from pathlib import Path
 
 from lxml import etree
@@ -9,7 +13,7 @@ from ksef.testing import FA3_NAMESPACE, build_test_invoice, random_nip
 from ufirma.cli import app
 
 NS = {"jpk": JPK_V7M_NAMESPACE, "etd": ETD_NAMESPACE}
-SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "jpk_v7m" / "jpk_v7m.xsd"
+SCHEMA_PATH = Path(str(files("jpk"))) / "schemas" / "jpk_v7m" / "jpk_v7m.xsd"
 
 runner = CliRunner()
 
@@ -17,7 +21,7 @@ runner = CliRunner()
 def write_invoice(
     directory: Path, seller_nip: str, invoice_number: str, issue_date: str
 ) -> str:
-    """Zapisz fakturę testową z podmienioną datą wystawienia; zwróć numer KSeF."""
+    """Write a test invoice with a patched issue date; return its KSeF number."""
     root = etree.fromstring(
         build_test_invoice(seller_nip, random_nip(), invoice_number)
     )
@@ -235,3 +239,76 @@ def test_download_requires_credentials(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "poświadczeń" in result.output
+
+
+def test_send_validates_document_before_sending(tmp_path: Path) -> None:
+    """A bad file is rejected locally, with no gateway traffic (this test is offline)."""
+    jpk_file = tmp_path / "JPK_V7M_2026-01.xml"
+    jpk_file.write_bytes(b'<JPK xmlns="http://crd.gov.pl/wzor/2025/12/19/14090/"/>')
+    args = [
+        "jpk",
+        "send",
+        str(jpk_file),
+        "--revenue",
+        "0",
+        "--nip",
+        random_nip(),
+        "--first-name",
+        "Jan",
+        "--last-name",
+        "Kowalski",
+        "--birth-date",
+        "1980-05-01",
+    ]
+    result = runner.invoke(app, args, env=_NO_SEND_ENV)
+    assert result.exit_code == 1
+    assert "niezgodny ze schematem" in result.output
+    assert "--no-validate" in result.output
+
+
+def test_generate_no_validate_skips_schema_check(tmp_path: Path) -> None:
+    seller_nip = random_nip()
+    invoices_dir = tmp_path / "faktury"
+    invoices_dir.mkdir()
+    write_invoice(invoices_dir, seller_nip, "FV/1/2026", "2026-01-15")
+    output_dir = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "jpk",
+            "generate",
+            "--period",
+            "2026-01",
+            "--nip",
+            seller_nip,
+            "--name",
+            "Testowa Firma Sp. z o.o.",
+            "--email",
+            "firma@example.com",
+            "--tax-office",
+            "0202",
+            "--input-dir",
+            str(invoices_dir),
+            "--output-dir",
+            str(output_dir),
+            "--no-validate",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert (output_dir / "JPK_V7M_2026-01.xml").is_file()
+
+
+def test_cli_survives_legacy_windows_console() -> None:
+    """Windows consoles use cp1250/cp852, which have no "→" — output must hold.
+
+    Reproduces the redirected-output case: the encoding then comes from the
+    locale instead of the console, and an unencodable character in a status
+    line would kill the command after it had already done the work.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", "from ufirma.cli import main; main()", "--help"],
+        env={**os.environ, "PYTHONIOENCODING": "cp1250"},
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert b"KSeF" in result.stdout
