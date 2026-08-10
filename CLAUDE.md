@@ -112,8 +112,9 @@ Dystrybucja na PyPI (2026-08-10, przygotowane — pierwsze wydanie jeszcze nie p
 - `[tool.uv.build-backend] source-include` dokłada do sdist `tests/`, `doc/`, `scripts/`, `.env.example`
 - wheel zawiera `jpk/schemas/` i `jpk/certs/` (job `package` w CI to weryfikuje przy każdym pushu)
 - walidacja XSD u użytkownika: `validate_jpk_v7m()` + `--no-validate` w `generate`/`send`
-- publikacja: `publish.yml`, Trusted Publishing (OIDC) — **wymaga jednorazowej konfiguracji wydawcy zaufanego na pypi.org i test.pypi.org** (owner `mbakalarski`, repo `ufirma`, workflow `publish.yml`, environment `pypi`/`testpypi`); dopóki jej nie ma, workflow padnie na kroku `uv publish`
-- nazwa `ufirma` na PyPI **niesprawdzona** (brak dostępu do sieci przy tej pracy) — zweryfikować przed wydaniem
+- publikacja: `publish.yml`, Trusted Publishing (OIDC) — **wymaga jednorazowej konfiguracji wydawcy zaufanego na pypi.org i test.pypi.org** (owner `mbakalarski`, repo `ufirma`, workflow `publish.yml`, environment `pypi`/`testpypi`); dopóki jej nie ma, workflow padnie na kroku `uv publish`. Środowiska GitHuba `pypi` i `testpypi` utworzone (2026-08-10)
+- nazwa `ufirma` na PyPI **wolna** (sprawdzone 2026-08-10: pypi.org i test.pypi.org zwracają 404, warianty `UFirma`/`u-firma` też) — ale rezerwuje ją dopiero pierwszy upload
+- stan repo: commity `9b3f12c` (dystrybucja) i `bc5a615` (cryptography >=50, akcje, uv_build) na `main`, CI zielone na macierzy Linux/Windows × 3.11/3.14
 
 Do zrobienia (propozycje kolejnych kroków):
 1. Wydanie 0.1.0: skonfigurować wydawcę zaufanego, próbne wydanie na TestPyPI, potem release `v0.1.0`
